@@ -1,0 +1,26 @@
+{
+  "name": "commitment-graph",
+  "version": "0.1.0",
+  "description": "View and update the derived Commitment graph from an Obsidian vault.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "build": "npm run typecheck && node esbuild.config.mjs production && node tools/check-bundle.mjs",
+    "dev": "node esbuild.config.mjs"
+  },
+  "keywords": [],
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "happy-dom": "21.0.4",
+    "obsidian": "1.14.4",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
