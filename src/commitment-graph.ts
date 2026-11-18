@@ -5,6 +5,7 @@
  * recognition. This class has no Obsidian, presentation, or file dependency.
  */
 
+import type { CanonicalField } from "./canonical-field";
 import { compareCodePoints } from "./code-point-order";
 import { createDiagnostic, createFailure } from "./plugin-failure";
 import { serializeProjection } from "./projection-writer";
@@ -129,7 +130,7 @@ const PYTHON_WHITESPACE: RegExp =
 
 
 /** Read one own frontmatter entry as exact text or no value. */
-function textField(input: CanonicalInput, field: string): string | null {
+function textField(input: CanonicalInput, field: CanonicalField): string | null {
     // Report no supplied value for an absent field.
     if (!input.frontmatter.has(field)) {
         // Return the absent marker.
@@ -179,7 +180,7 @@ function isValidIdentifier(value: unknown): value is string {
 /** Throw when an identifier is absent or invalid for a required field. */
 function requiredIdentifier(
     input: CanonicalInput,
-    field: string,
+    field: CanonicalField,
     kind: CommitmentKind,
     code: string,
 ): string {
@@ -220,11 +221,11 @@ function graphFailure(diagnostic: Diagnostic): Error {
 
 /** Return the canonical kind of one input, or null when it is not canonical. */
 function canonicalKind(input: CanonicalInput): CommitmentKind | null {
-    // Read the exact type value.
-    const value: unknown = input.frontmatter.get("type");
+    // Read the exact type value as text.
+    const value: string | null = textField(input, "type");
 
     // Accept only exact supported canonical type values.
-    if (typeof value === "string" && CANONICAL_KINDS[value] === true) {
+    if (value !== null && CANONICAL_KINDS[value] === true) {
         // Return the recognized canonical kind.
         return value as CommitmentKind;
     }
@@ -236,14 +237,17 @@ function canonicalKind(input: CanonicalInput): CommitmentKind | null {
 
 /** Read one optional project program value using the canonical rules. */
 function optionalProjectProgram(input: CanonicalInput): string | null {
+    // Name the canonical relationship field for typed access.
+    const field: CanonicalField = "program";
+
     // Treat an absent program field as no relationship.
-    if (!input.frontmatter.has("program")) {
+    if (!input.frontmatter.has(field)) {
         // Report no relationship.
         return null;
     }
 
     // Read the present value without changing it.
-    const value: unknown = input.frontmatter.get("program");
+    const value: unknown = input.frontmatter.get(field);
 
     // Treat an explicit null value as no relationship.
     if (value === null || value === undefined) {

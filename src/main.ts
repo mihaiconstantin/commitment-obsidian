@@ -2,7 +2,7 @@
  * Obsidian plugin entry point: composition root for the two graph commands.
  */
 
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, type App, type PluginManifest } from "obsidian";
 
 import { CommitmentGraph } from "./commitment-graph";
 import type { GraphResult } from "./commitment-graph";
@@ -30,10 +30,10 @@ const BUSY_MESSAGE: "A commitment graph command is already running" = "A commitm
 /** Commitment graph plugin. */
 export default class CommitmentPlugin extends Plugin {
     /** Vault-backed graph inputs and output. */
-    private store: VaultGraphStore | null = null;
+    private readonly store: VaultGraphStore;
 
     /** Replaceable graph presentation seam. */
-    private presenter: GraphPresenter | null = null;
+    private readonly presenter: GraphPresenter;
 
     /** Whether the workspace finished loading its layout. */
     private ready = false;
@@ -41,37 +41,14 @@ export default class CommitmentPlugin extends Plugin {
     /** Whether one graph command is already running. */
     private busy = false;
 
-    /** Register the two commands and defer reads until the layout is ready. */
-    onload(): void {
-        // Compose the vault store and the modal presenter.
-        this.store = new VaultGraphStore(this.app.vault);
-        this.presenter = new TextGraphPresenter(this.app);
+    /** Compose the vault store and the modal presenter for one app. */
+    constructor(app: App, manifest: PluginManifest) {
+        // Initialize the Obsidian plugin base with its app and manifest.
+        super(app, manifest);
 
-        // Mark the workspace ready after the layout loads.
-        this.app.workspace.onLayoutReady((): void => {
-            // Record the ready state for later command invocations.
-            this.ready = true;
-        });
-
-        // Register the read-only graph command.
-        this.addCommand({
-            id: "view-graph",
-            name: VIEW_COMMAND,
-            callback: (): Promise<void> => {
-                // Return the command promise so callers can observe completion.
-                return this.runView();
-            },
-        });
-
-        // Register the graph update command.
-        this.addCommand({
-            id: "update-graph",
-            name: UPDATE_COMMAND,
-            callback: (): Promise<void> => {
-                // Return the command promise so callers can observe completion.
-                return this.runUpdate();
-            },
-        });
+        // Compose the vault store and the modal presenter once.
+        this.store = new VaultGraphStore(app.vault);
+        this.presenter = new TextGraphPresenter(app);
     }
 
     /** Derive and display the graph without writing a vault file. */
@@ -84,10 +61,11 @@ export default class CommitmentPlugin extends Plugin {
 
         try {
             // Read the saved inputs and build the same graph as Update.
-            const result: GraphResult = await this.buildGraph();
+            const snapshot: InputSnapshot = await this.store.readInputs();
+            const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
 
             // Display the graph and its warnings without writing.
-            this.presenter?.show(result.graph, result.diagnostics);
+            this.presenter.show(result.graph, result.diagnostics);
         } catch (error) {
             // Report the actionable failure without a partial graph.
             this.reportError(error);
@@ -106,24 +84,24 @@ export default class CommitmentPlugin extends Plugin {
         }
 
         try {
-            // Require the configured store before any vault access.
-            const store: VaultGraphStore = this.requireStore();
-
             // Read the saved inputs and build the graph.
-            const snapshot: InputSnapshot = await store.readInputs();
+            const snapshot: InputSnapshot = await this.store.readInputs();
             const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
 
             // Reject changed inputs before touching the destination.
-            await store.assertUnchanged(snapshot);
+            await this.store.assertUnchanged(snapshot);
 
             // Create, leave unchanged, or replace the derived output.
-            const outcome: WriteOutcome = await store.writeGraph(result.graph.toJson());
+            const outcome: WriteOutcome = await this.store.writeGraph(result.graph.toJson());
 
             // Report the concise update outcome.
             new Notice(`Commitment graph ${outcome}`);
 
-            // Present any nonblocking warnings with their source paths.
-            this.showWarnings(result);
+            // Present the graph when the build reported nonblocking warnings.
+            if (result.diagnostics.length > 0) {
+                // Show the warnings with their source paths.
+                this.presenter.show(result.graph, result.diagnostics);
+            }
         } catch (error) {
             // Report the actionable failure without a partial write.
             this.reportError(error);
@@ -131,30 +109,6 @@ export default class CommitmentPlugin extends Plugin {
             // Release the command guard.
             this.finishCommand();
         }
-    }
-
-    /** Read the saved inputs and build the graph through the shared model. */
-    private async buildGraph(): Promise<GraphResult> {
-        // Read the saved inputs through the configured store.
-        const snapshot: InputSnapshot = await this.requireStore().readInputs();
-
-        // Derive the canonical graph from the saved inputs.
-        return CommitmentGraph.build(snapshot.inputs);
-    }
-
-    /** Require the store composed during plugin load. */
-    private requireStore(): VaultGraphStore {
-        // Read the composed store.
-        const store: VaultGraphStore | null = this.store;
-
-        // Reject a command that runs before composition.
-        if (store === null) {
-            // Report the unavailable composition state.
-            throw new Error("Commitment graph plugin is not initialized");
-        }
-
-        // Return the composed store.
-        return store;
     }
 
     /** Check readiness and acquire the single command guard. */
@@ -184,18 +138,6 @@ export default class CommitmentPlugin extends Plugin {
         this.busy = false;
     }
 
-    /** Show nonblocking warnings through the shared presentation seam. */
-    private showWarnings(result: GraphResult): void {
-        // Skip presentation when the build produced no warnings.
-        if (result.diagnostics.length === 0) {
-            // Return without opening a modal.
-            return;
-        }
-
-        // Present the derived graph and its warnings for readable scrolling.
-        this.presenter?.show(result.graph, result.diagnostics);
-    }
-
     /** Report one command failure with a concise notice. */
     private reportError(error: unknown): void {
         // Read the structured message when the failure carries one.
@@ -207,5 +149,34 @@ export default class CommitmentPlugin extends Plugin {
 
         // Report the unexpected failure message.
         new Notice(error instanceof Error ? error.message : String(error));
+    }
+
+    /** Register the two commands and defer reads until the layout is ready. */
+    onload(): void {
+        // Mark the workspace ready after the layout loads.
+        this.app.workspace.onLayoutReady((): void => {
+            // Record the ready state for later command invocations.
+            this.ready = true;
+        });
+
+        // Register the read-only graph command.
+        this.addCommand({
+            id: "view-graph",
+            name: VIEW_COMMAND,
+            callback: (): Promise<void> => {
+                // Return the command promise so callers can observe completion.
+                return this.runView();
+            },
+        });
+
+        // Register the graph update command.
+        this.addCommand({
+            id: "update-graph",
+            name: UPDATE_COMMAND,
+            callback: (): Promise<void> => {
+                // Return the command promise so callers can observe completion.
+                return this.runUpdate();
+            },
+        });
     }
 }

@@ -8,18 +8,8 @@
 
 import { isAlias, isMap, isScalar, isSeq, type Document, type Node, type YAMLMap, type YAMLSeq } from "yaml";
 
+import { isCanonicalField } from "./canonical-field";
 import { INVALID_SCALAR } from "./scalar-tags";
-
-
-/** Field names that drive canonical recognition or graph relationships. */
-const CANONICAL_FIELDS: Readonly<Record<string, true>> = {
-    type: true,
-    id: true,
-    area: true,
-    program: true,
-    level: true,
-    anchor: true,
-};
 
 
 /** Return whether a value is a node from the parsed document. */
@@ -132,7 +122,7 @@ function inspectMap(map: YAMLMap, document: Document, visited: Set<YAMLMap>): vo
         const hasTaggedKey: boolean =
             hasUnresolvedTag(key) &&
             keyText !== null &&
-            CANONICAL_FIELDS[keyText] === true;
+            isCanonicalField(keyText);
 
         // Reject a tagged key that spells a canonical field.
         if (hasTaggedKey) {
@@ -150,7 +140,7 @@ function inspectMap(map: YAMLMap, document: Document, visited: Set<YAMLMap>): vo
         }
 
         // Ignore non-canonical field names.
-        if (keyText === null || CANONICAL_FIELDS[keyText] !== true) {
+        if (keyText === null || !isCanonicalField(keyText)) {
             // Continue with the next pair.
             continue;
         }
