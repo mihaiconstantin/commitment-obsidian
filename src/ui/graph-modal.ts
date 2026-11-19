@@ -17,7 +17,7 @@ import { GraphTree } from "./graph-tree";
 
 
 /** Readable modal title. */
-const TITLE: "Commitment graph" = "Commitment graph";
+const TITLE: "Commitment Graph" = "Commitment Graph";
 
 
 /** Modal showing one derived graph. */

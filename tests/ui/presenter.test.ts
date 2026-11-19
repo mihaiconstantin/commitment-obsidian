@@ -103,7 +103,7 @@ describe("text graph presenter", () => {
         presenter.show(result, "json");
 
         expect(Modal.instances).toHaveLength(1);
-        expect(Modal.instances[0]?.titleEl.textContent).toBe("Commitment graph");
+        expect(Modal.instances[0]?.titleEl.textContent).toBe("Commitment Graph");
         expect(Modal.instances[0]?.opened).toBe(true);
         expect(document.querySelector("b")).toBeNull();
         expect(document.querySelector(".commitment-graph__json")?.textContent).toContain(
