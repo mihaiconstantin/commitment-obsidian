@@ -6,16 +6,26 @@ Markdown files in a vault. It provides exactly two commands:
 - `Commitment: View graph` shows the graph without changing any file.
 - `Commitment: Update graph` writes `commitment-graph.json` at the vault root.
 
+A setting selects how the graph is presented. JSON shows the exact projection
+text. Tree shows the same graph as a foldable area, program, and project tree.
+The setting changes presentation only; `Update graph` always writes the same
+JSON. In tree mode, each area, program, and project row also has a pencil or
+plus icon that opens its source file or creates the missing container file.
+
 Both commands run on Obsidian Desktop and Obsidian Mobile (iOS). The plugin
 uses only Obsidian and browser APIs. It does not use Python, Node.js, Electron,
 or files outside the vault.
 
 ## Install
 
-1. Build the plugin, or use an existing `main.js`.
+1. Run `npm ci` and `npm run build`.
 2. Create `<vault>/.obsidian/plugins/commitment-graph/`.
-3. Copy `main.js`, `manifest.json`, and `styles.css` into that folder.
+3. Copy the three files from `dist/` into that folder: `main.js`,
+   `manifest.json`, and `styles.css`.
 4. Enable `Commitment` in **Settings → Community plugins**.
+
+`dist/` is generated and ignored by git. The plugin directory must contain
+exactly those three files.
 
 The manifest declares `isDesktopOnly: false` and minimum app version `1.5.7`.
 
@@ -27,9 +37,29 @@ npm test
 npm run build
 ```
 
-`npm run build` type checks the sources and tests, bundles `main.js` with
-esbuild, and checks the bundle for Node or Electron runtime imports. The `yaml`
+`npm run build` type checks the sources and tests, bundles `dist/main.js` with
+esbuild, copies `manifest.json` and `assets/styles.css` into `dist/`, and checks
+the bundle for Node or Electron runtime imports. The `yaml`
 package is bundled from its browser entry.
+
+`styles.css` ships at the plugin root because Obsidian loads it from the plugin
+directory, not from the sources. The stylesheet source lives in `assets/`,
+separate from the TypeScript tree.
+
+## Source layout
+
+```text
+src/
+├── main.ts              # Composition root: the two commands and their wiring.
+├── plugin-failure.ts    # Structured plugin failures and diagnostics.
+├── graph/               # Derivation: reading, construction, snapshot, store.
+├── frontmatter/         # Markdown frontmatter parsing and canonical typing.
+├── containers/          # Container identity, paths, templates, file actions.
+├── ui/                  # Modal, presenter, foldable tree.
+└── settings/            # Persisted settings and the settings tab.
+```
+
+`assets/` holds the stylesheet source that the build copies into `dist/`.
 
 ## Saved-file semantics
 
@@ -59,6 +89,94 @@ removed, changed, or became unreadable. It then:
 - replaces the file through `vault.process` when the content differs.
 
 Update never modifies Markdown files.
+
+## Settings
+
+The plugin stores one nested settings value:
+
+```json
+{
+    "presentation": { "mode": "json" },
+    "creation": {
+        "area": { "templatePath": "", "folderPath": "" },
+        "program": { "templatePath": "", "folderPath": "" },
+        "project": { "templatePath": "", "folderPath": "" }
+    }
+}
+```
+
+`presentation.mode` is `json` or `html`. For compatibility, an existing
+top-level `"mode"` value still loads when the nested value is absent. New
+writes always use the nested shape.
+
+For each kind, `templatePath` names a vault Markdown file and `folderPath`
+names a vault folder. Trimmed empty strings mean unset. The vault root is the
+default folder when `folderPath` is empty. Absolute paths, drive-letter paths,
+UNC paths, and any path segment equal to `..` are dropped during read, so they
+behave as unset. Unknown kind keys and malformed values are ignored.
+
+## Container creation
+
+The file icons exist only in tree presentation. A pencil opens the indexed
+source file of an explicit area, program, or project. A plus creates the file
+for an area or program that exists only through relationships.
+
+The created path is `<folderPath>/<Kind> - <id>.md`, where `Kind` is `Area`,
+`Program`, or `Project`. An empty folder places the file at the vault root and
+creates no folder. Missing parent folders are created.
+
+The exact identifier stays in frontmatter. Only the file name is sanitized:
+path separators, `< > : " / \ | ? *`, and control characters become `-`;
+consecutive replacement dashes collapse; trailing dots and spaces are
+trimmed. If the sanitized identifier is empty, creation aborts without a
+write.
+
+Identity frontmatter is plugin-owned. Creation overrides `type`, `id`, and
+`area`; sets `program` for a project that has one and removes a stale template
+`program` otherwise. For programs and projects, it sets `state: active` when
+the template state has no value: absent, null, or an empty string. A real state
+value such as `paused` is kept. For an area only, it sets `active: true` when
+the template has no `active` value; an explicit boolean is kept. Programs and
+projects never gain an `active` key. Every other key and comment is kept.
+
+### Template contract
+
+`templatePath` must point at a vault file. A configured but missing, non-file,
+or unreadable template aborts with a notice naming the template path. An unset
+template is valid: the plugin writes a frontmatter-only document and opens it.
+
+Placeholders are replaced across the whole template text before the identity
+override:
+
+- `{{title}}` becomes the exact identifier.
+- `{{date}}` becomes the current local date as `YYYY-MM-DD`.
+- `{{time}}` becomes the current local time as `HH:mm`.
+- `{{date:FMT}}` and `{{time:FMT}}` use the given `moment` format.
+- Any other `{{...}}` text stays literal.
+
+Output uses `\n` line endings. A template without frontmatter gets a canonical
+identity block, one blank line, then the body. An empty template produces only
+the canonical block. Frontmatter-only output ends with a single newline. A
+template body keeps its text except that the separator after the frontmatter
+becomes exactly one blank line.
+
+### Creation failures
+
+Creation writes nothing and shows one notice naming the affected path when:
+
+- an existing file or folder already occupies the derived target path;
+- a parent path is occupied by a file;
+- the configured template is missing, is not a file, or cannot be read;
+- the composed document fails canonical validation;
+- folder creation or file creation fails.
+
+Creation never overwrites an existing path, including a file that already has
+the expected identity.
+
+Template files must live outside graph discovery, either below a hidden path
+or a directory named `Templates`, or they must be non-canonical. A canonical
+template is itself a graph input and can block graph construction with an empty
+or conflicting identity.
 
 ## Warnings and errors
 
@@ -95,5 +213,9 @@ programs with fewer than the recommended two projects.
   preserve the old file.
 - Obsidian's public file model does not expose portable symlink detection, so
   symlink exclusion differs from the Python CLI. Hidden paths are skipped.
-- The plugin sets no settings, configurable output path, automatic refresh, or
-  extra commands.
+- The plugin sets no configurable output path, automatic refresh, or extra
+  commands. Settings select the presentation shape and the per-kind template
+  and folder used by tree file creation.
+- Container file creation is not a transaction across folder creation, file
+  creation, and opening the file. A later failure does not roll back folders or
+  a file that was already created.

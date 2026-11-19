@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { serializeProjection } from "../src/projection-writer";
-import type { GraphArea } from "../src/graph-types";
+import { serializeProjection } from "../../src/graph/projection-writer";
+import type { GraphArea } from "../../src/graph/types";
 
 describe("projection writer", () => {
     it("renders the empty graph with one newline", () => {

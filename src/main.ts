@@ -4,14 +4,18 @@
 
 import { Notice, Plugin, type App, type PluginManifest } from "obsidian";
 
-import { CommitmentGraph } from "./commitment-graph";
-import type { GraphResult } from "./commitment-graph";
-import type { GraphPresenter } from "./graph-presenter";
-import type { InputSnapshot } from "./graph-types";
-import { isPluginFailure } from "./plugin-failure";
-import { TextGraphPresenter } from "./text-graph-presenter";
-import { VaultGraphStore } from "./vault-graph-store";
-import type { WriteOutcome } from "./vault-graph-store";
+import { CommitmentGraph, type GraphResult } from "./graph/commitment-graph";
+import { VaultGraphStore, type WriteOutcome } from "./graph/store";
+import type { InputSnapshot } from "./graph/types";
+import { describeFailure } from "./plugin-failure";
+import {
+    readCommitmentSettings,
+    type CommitmentCreationSettings,
+    type CommitmentSettings,
+} from "./settings/settings";
+import { CommitmentSettingTab } from "./settings/settings-tab";
+import { ModalGraphPresenter } from "./ui/modal-presenter";
+import type { GraphPresenter } from "./ui/presenter";
 
 
 /** Command names registered under the `Commitment` plugin name. */
@@ -41,6 +45,9 @@ export default class CommitmentPlugin extends Plugin {
     /** Whether one graph command is already running. */
     private busy = false;
 
+    /** Persisted graph presentation and container creation settings. */
+    settings: CommitmentSettings = readCommitmentSettings(null);
+
     /** Compose the vault store and the modal presenter for one app. */
     constructor(app: App, manifest: PluginManifest) {
         // Initialize the Obsidian plugin base with its app and manifest.
@@ -48,7 +55,10 @@ export default class CommitmentPlugin extends Plugin {
 
         // Compose the vault store and the modal presenter once.
         this.store = new VaultGraphStore(app.vault);
-        this.presenter = new TextGraphPresenter(app);
+        this.presenter = new ModalGraphPresenter(
+            app,
+            (): CommitmentCreationSettings => this.settings.creation,
+        );
     }
 
     /** Derive and display the graph without writing a vault file. */
@@ -65,7 +75,7 @@ export default class CommitmentPlugin extends Plugin {
             const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
 
             // Display the graph and its warnings without writing.
-            this.presenter.show(result.graph, result.diagnostics);
+            this.presenter.show(result, this.settings.presentation.mode);
         } catch (error) {
             // Report the actionable failure without a partial graph.
             this.reportError(error);
@@ -100,7 +110,7 @@ export default class CommitmentPlugin extends Plugin {
             // Present the graph when the build reported nonblocking warnings.
             if (result.diagnostics.length > 0) {
                 // Show the warnings with their source paths.
-                this.presenter.show(result.graph, result.diagnostics);
+                this.presenter.show(result, this.settings.presentation.mode);
             }
         } catch (error) {
             // Report the actionable failure without a partial write.
@@ -140,19 +150,30 @@ export default class CommitmentPlugin extends Plugin {
 
     /** Report one command failure with a concise notice. */
     private reportError(error: unknown): void {
-        // Read the structured message when the failure carries one.
-        if (isPluginFailure(error)) {
-            // Report the path-specific message.
-            new Notice(error.message);
-            return;
-        }
+        // Report the readable failure message.
+        new Notice(describeFailure(error));
+    }
 
-        // Report the unexpected failure message.
-        new Notice(error instanceof Error ? error.message : String(error));
+    /** Persist one complete settings value after normalization. */
+    async saveSettings(next: CommitmentSettings): Promise<void> {
+        // Normalize the supplied value through the settings reader.
+        const normalized: CommitmentSettings = readCommitmentSettings(next);
+
+        // Retain the normalized settings for the next command or action.
+        this.settings = normalized;
+
+        // Persist only the normalized settings shape.
+        await this.saveData(normalized);
     }
 
     /** Register the two commands and defer reads until the layout is ready. */
-    onload(): void {
+    async onload(): Promise<void> {
+        // Apply the stored settings before any command or tab can read them.
+        this.settings = readCommitmentSettings(await this.loadData().catch((): null => null));
+
+        // Register the settings tab for presentation and creation.
+        this.addSettingTab(new CommitmentSettingTab(this.app, this));
+
         // Mark the workspace ready after the layout loads.
         this.app.workspace.onLayoutReady((): void => {
             // Record the ready state for later command invocations.

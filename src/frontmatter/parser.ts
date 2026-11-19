@@ -3,15 +3,12 @@
  * library and the reviewed scalar contract.
  */
 
-import { getFrontMatterInfo } from "obsidian";
-import type { FrontMatterInfo } from "obsidian";
-import { Document, parseDocument } from "yaml";
-import type { Node } from "yaml";
+import { getFrontMatterInfo, type FrontMatterInfo } from "obsidian";
+import { Document, parseDocument, type Node } from "yaml";
 
-import { assertCanonicalTagsResolved } from "./canonical-tag-check";
-import { createFailure } from "./plugin-failure";
-import { createScalarTags } from "./scalar-tags";
-import type { YamlVersion } from "./scalar-tags";
+import { createFailure } from "../plugin-failure";
+import { createScalarTags, type YamlVersion } from "./scalar-tags";
+import { assertCanonicalTagsResolved } from "./tag-check";
 
 
 /** YAML version used for every bounded frontmatter block. */

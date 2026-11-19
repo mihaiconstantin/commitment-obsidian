@@ -14,6 +14,22 @@ export type CommitmentKind = "area" | "program" | "project" | "meeting" | "note"
 export type CommitmentLevel = "area" | "program" | "project";
 
 
+/** One area, program, or project row that offers a file action. */
+export interface ContainerIdentity {
+    /** Concept level of the row. */
+    readonly kind: CommitmentLevel;
+
+    /** Exact identifier text for the row. */
+    readonly id: string;
+
+    /** Owning area identifier. Area rows use their own identifier. */
+    readonly area: string;
+
+    /** Enclosing program identifier for a project row, or no program. */
+    readonly program: string | null;
+}
+
+
 /** One nonblocking finding about the graph inputs. */
 export interface Diagnostic {
     /** Stable category code for the finding. */

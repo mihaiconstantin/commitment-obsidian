@@ -1,7 +1,7 @@
 {
   "id": "commitment-graph",
   "name": "Commitment",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "1.5.7",
   "description": "View and update the derived commitment graph.",
   "author": "Mihai Constantin",

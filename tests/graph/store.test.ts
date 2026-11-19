@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("obsidian", async () => await import("./stubs/obsidian"));
+vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
-import { VaultGraphStore, GRAPH_PATH } from "../src/vault-graph-store";
-import type { CanonicalInput, InputSnapshot } from "../src/graph-types";
-import { FakeVault } from "./support/fake-vault";
+import { VaultGraphStore, GRAPH_PATH } from "../../src/graph/store";
+import type { CanonicalInput, InputSnapshot } from "../../src/graph/types";
+import { FakeVault } from "../support/fake-vault";
 
 
 const markdown = (type: string, fields: string): string =>

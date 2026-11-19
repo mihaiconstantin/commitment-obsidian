@@ -3,7 +3,7 @@
  * Python exporter: four-space indentation, literal Unicode, and one newline.
  */
 
-import type { GraphArea, GraphProgram } from "./graph-types";
+import type { GraphArea, GraphProgram } from "./types";
 
 
 /** Return one indentation level of four spaces per unit. */

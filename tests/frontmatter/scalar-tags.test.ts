@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseDocument, type Document } from "yaml";
-import { createScalarTags, type YamlVersion } from "../src/scalar-tags";
+import { createScalarTags, type YamlVersion } from "../../src/frontmatter/scalar-tags";
 
 
 function parseValue(source: string, version: YamlVersion): unknown {

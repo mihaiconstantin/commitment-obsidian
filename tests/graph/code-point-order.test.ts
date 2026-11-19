@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareCodePoints } from "../src/code-point-order";
+import { compareCodePoints } from "../../src/graph/code-point-order";
 
 describe("code point ordering", () => {
     it("orders supplementary characters by code point, not UTF-16 unit", () => {

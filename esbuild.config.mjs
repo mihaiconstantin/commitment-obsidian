@@ -2,7 +2,12 @@
  * Development and production bundling for the Commitment plugin.
  */
 
+import { copyFile, mkdir } from "node:fs/promises";
+
 import esbuild from "esbuild";
+
+// Keep stylesheet sources out of the TypeScript tree.
+const STYLESHEET = "assets/styles.css";
 
 // Recognize the production invocation mode.
 const production = process.argv[2] === "production";
@@ -20,11 +25,21 @@ const options = {
     logLevel: "info",
     sourcemap: production ? false : "inline",
     treeShaking: true,
-    outfile: "main.js",
+    outfile: "dist/main.js",
     minify: production,
     platform: "browser",
     mainFields: ["browser", "module", "main"],
 };
+
+/** Stage the Obsidian plugin files beside the bundle. */
+async function stageAssets() {
+    // Create the output directory when it is absent.
+    await mkdir("dist", { recursive: true });
+
+    // Copy the manifest and stylesheet Obsidian loads.
+    await copyFile("manifest.json", "dist/manifest.json");
+    await copyFile(STYLESHEET, "dist/styles.css");
+}
 
 // Create the build context.
 const context = await esbuild.context(options);
@@ -34,9 +49,15 @@ if (production) {
     // Rebuild the production bundle once.
     await context.rebuild();
 
+    // Stage the Obsidian plugin files beside the bundle.
+    await stageAssets();
+
     // Release the build context.
     await context.dispose();
 } else {
+    // Stage the plugin files before watching.
+    await stageAssets();
+
     // Watch the sources for development rebuilds.
     await context.watch();
 }

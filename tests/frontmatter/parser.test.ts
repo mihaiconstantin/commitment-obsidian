@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFrontmatter } from "../src/frontmatter-parser";
+import { parseFrontmatter } from "../../src/frontmatter/parser";
 
 describe("frontmatter parser", () => {
     it("returns an empty mapping without frontmatter", () => {

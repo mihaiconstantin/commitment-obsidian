@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CommitmentGraph } from "../src/commitment-graph";
-import type { GraphResult } from "../src/commitment-graph";
-import type { CanonicalInput } from "../src/graph-types";
+import { CommitmentGraph } from "../../src/graph/commitment-graph";
+import type { GraphResult } from "../../src/graph/commitment-graph";
+import type { CanonicalInput } from "../../src/graph/types";
 
 
 function input(path: string, entries: ReadonlyArray<readonly [string, unknown]>): CanonicalInput {
@@ -68,6 +68,26 @@ describe("commitment graph", () => {
 
         expect(result.diagnostics).toEqual([]);
         expect(result.graph.getAreas().map((entry) => entry.id)).toEqual(["empty", "work"]);
+    });
+
+    it("indexes explicit container paths and leaves implicit ones absent", () => {
+        // Derive a graph with explicit area and project containers.
+        const result: GraphResult = CommitmentGraph.build([
+            area("areas/work.md", "work"),
+            project("projects/alpha.md", "alpha", "work", "phd"),
+            project("projects/beta.md", "beta", "work", "phd"),
+            project("projects/gamma.md", "gamma", "work"),
+        ]);
+
+        // Require the explicit source paths.
+        expect(result.graph.getContainerPath("area", "work")).toBe("areas/work.md");
+        expect(result.graph.getContainerPath("project", "alpha")).toBe("projects/alpha.md");
+        expect(result.graph.getContainerPath("project", "gamma")).toBe("projects/gamma.md");
+
+        // Require no path for an implicit program or an unknown identifier.
+        expect(result.graph.getContainerPath("program", "phd")).toBeNull();
+        expect(result.graph.getContainerPath("program", "missing")).toBeNull();
+        expect(result.graph.getContainerPath("project", "missing")).toBeNull();
     });
 
     it("establishes an area from an area-level support anchor", () => {
@@ -337,6 +357,66 @@ describe("commitment graph", () => {
         expect(result.graph.getAreas()[1]?.programs.map((entry) => entry.id)).toEqual([
             "\u{1F600}",
         ]);
+    });
+
+    it("emits classification, program, then support diagnostics in that order", () => {
+        // Derive a graph whose inputs produce one warning in every phase.
+        const result: GraphResult = CommitmentGraph.build([
+            // Add a support container with no usable anchor, classified in the read phase.
+            input("z/no-anchor.md", [["type", "meeting"]]),
+            // Add a program that coordinates one project, which is underfilled.
+            program("programs/phd.md", "phd", "work"),
+            project("projects/alpha.md", "alpha", "work", "phd"),
+            // Anchor to an absent project, resolved only after the graph exists.
+            input("a/unanchored.md", [["type", "note"], ["level", "project"], ["anchor", "ghost"]]),
+        ]);
+
+        // Require the phase order: classification, program, then pending support.
+        expect(result.diagnostics.map((entry) => entry.code)).toEqual([
+            "unresolved_anchor",
+            "underfilled_program",
+            "unresolved_anchor",
+        ]);
+
+        // Require each diagnostic to name its own source path.
+        expect(result.diagnostics.map((entry) => entry.paths[0])).toEqual([
+            "z/no-anchor.md",
+            "programs/phd.md",
+            "a/unanchored.md",
+        ]);
+    });
+
+    it("orders every input phase by code-point source path", () => {
+        // Derive diagnostics from inputs whose paths sort differently by locale.
+        const result: GraphResult = CommitmentGraph.build([
+            input("z/unanchored.md", [["type", "note"]]),
+            input("A/unanchored.md", [["type", "note"]]),
+            input("ä/unanchored.md", [["type", "note"]]),
+        ]);
+
+        // Require the code-point order that the Python builder uses.
+        expect(result.diagnostics.map((entry) => entry.paths[0])).toEqual([
+            "A/unanchored.md",
+            "z/unanchored.md",
+            "ä/unanchored.md",
+        ]);
+    });
+
+    it("serializes multiple areas with fixed field and key order", () => {
+        // Derive a graph with two areas, one program, and several projects.
+        const result: GraphResult = CommitmentGraph.build([
+            area("areas/home.md", "home"),
+            area("areas/work.md", "work"),
+            project("projects/alpha.md", "alpha", "work", "phd"),
+            project("projects/beta.md", "beta", "work", "phd"),
+            project("projects/chores.md", "chores", "home"),
+            project("projects/gamma.md", "gamma", "work"),
+        ]);
+
+        // Require the exact Python-compatible byte text.
+        expect(result.graph.toJson()).toBe(
+            '{\n    "home": {\n        "projects": [\n            "chores"\n        ],\n        "programs": {}\n    },\n    "work": {\n        "projects": [\n            "gamma"\n        ],\n        "programs": {\n            "phd": {\n                "projects": [\n                    "alpha",\n                    "beta"\n                ]\n            }\n        }\n    }\n}\n',
+        );
     });
 
     it("rejects every information separator in an identifier", () => {

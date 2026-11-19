@@ -3,7 +3,7 @@
  * handlers can report actionable errors without a second error hierarchy.
  */
 
-import type { Diagnostic } from "./graph-types";
+import type { Diagnostic } from "./graph/types";
 
 
 /** Error value with a stable code and structured findings. */
@@ -49,6 +49,24 @@ export function createDiagnostic(
 
     // Return the finding with its observed and required counts.
     return { code, message, paths, actual, required };
+}
+
+
+/** Read a short message from any thrown value. */
+export function describeFailure(error: unknown): string {
+    // Prefer the error message and fall back to the plain value text.
+    return error instanceof Error ? error.message : String(error);
+}
+
+
+/** Create one failure scoped to a single vault path. */
+export function createPathFailure(
+    code: string,
+    message: string,
+    path: string,
+): PluginFailure {
+    // Carry the affected path as the only diagnostic.
+    return createFailure(code, message, [createDiagnostic(code, message, [path])]);
 }
 
 

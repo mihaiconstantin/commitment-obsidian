@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 
 // Read the production bundle as text.
-const bundle = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+const bundle = readFileSync(new URL("../dist/main.js", import.meta.url), "utf8");
 
 // Collect every runtime module specifier that the bundle requests.
 const SPECIFIER_PATTERN = /(?:require\(\s*|from\s*)["']([^"']+)["']/g;
@@ -36,7 +36,7 @@ for (const specifier of specifiers) {
     // Detect the Electron runtime and every Node built-in.
     if (specifier === "electron" || builtins.has(specifier)) {
         // Report the forbidden import and fail the build.
-        console.error(`Forbidden runtime import in main.js: ${specifier}`);
+        console.error(`Forbidden runtime import in dist/main.js: ${specifier}`);
         process.exit(1);
     }
 }

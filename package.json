@@ -1,8 +1,8 @@
 {
   "name": "commitment-graph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "View and update the derived Commitment graph from an Obsidian vault.",
-  "main": "main.js",
+  "main": "dist/main.js",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
