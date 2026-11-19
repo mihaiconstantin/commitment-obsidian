@@ -460,12 +460,7 @@ body:not(.is-mobile) .modal.commitment-graph-modal {
     min-height: 0;
 }
 
-/* JSON presentation and shared chrome. */
-.commitment-graph__label {
-    margin-block: 0 0.5rem;
-    color: var(--text-muted);
-}
-
+/* JSON presentation. */
 .commitment-graph__json {
     max-height: 60vh;
     overflow: auto;

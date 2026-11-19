@@ -101,7 +101,6 @@ describe("commitment graph commands", () => {
         expect(vault.calls.creates).toEqual([]);
         expect(vault.calls.processes).toEqual([]);
         expect(vault.files.has(GRAPH_PATH)).toBe(false);
-        expect(document.body.textContent).toContain("Graph from saved files");
     });
 
     it("shows warnings separately from the JSON", async () => {

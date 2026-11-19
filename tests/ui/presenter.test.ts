@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("text graph presenter", () => {
-    it("renders the label, graph text, and warnings with paths", () => {
+    it("renders the graph text and warnings with paths", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
@@ -55,9 +55,6 @@ describe("text graph presenter", () => {
 
         presenter.show(result, "json");
 
-        expect(document.body.textContent).toContain("Graph from saved files");
-        const label: Element | null = document.querySelector(".commitment-graph__label");
-        expect(label?.textContent).toBe("Graph from saved files");
         const block: Element | null = document.querySelector("pre.commitment-graph__json");
         expect(block?.textContent).toBe(
             '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',

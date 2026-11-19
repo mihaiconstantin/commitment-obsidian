@@ -66,12 +66,6 @@ export class GraphModal extends Modal {
         const content: HTMLElement = this.contentEl;
         content.empty();
 
-        // Add the saved-files label before the graph content.
-        content.createEl("p", {
-            text: "Graph from saved files",
-            cls: "commitment-graph__label",
-        });
-
         // Render the selected shape: the raw projection or the interactive tree.
         if (this.mode === "html") {
             // Render the interactive tree with file actions.
