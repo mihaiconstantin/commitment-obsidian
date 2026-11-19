@@ -356,39 +356,11 @@
     padding: 0 1px;
 }
 
-.commitment-graph__tree-host .cg-legend {
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
+/* Reserve the 22px the retired colour legend held, so the last row keeps its
+   gutter inside the rounded modal. */
+.commitment-graph__tree-host .cg-gutter {
     flex: none;
-    padding-top: 8px;
-    font-size: 10.5px;
-    color: var(--cg-muted);
-}
-
-.commitment-graph__tree-host .cg-legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.commitment-graph__tree-host .cg-legend-item + .cg-legend-item {
-    margin-inline-start: 14px;
-}
-
-.commitment-graph__tree-host .cg-swatch {
-    width: 9px;
-    height: 9px;
-    border-radius: 2px;
-    flex: none;
-}
-
-.commitment-graph__tree-host .cg-swatch--area {
-    background: var(--cg-p);
-}
-
-.commitment-graph__tree-host .cg-swatch--program {
-    background: var(--cg-prog);
+    height: 22px;
 }
 
 .commitment-graph__tree-host .cg-empty {

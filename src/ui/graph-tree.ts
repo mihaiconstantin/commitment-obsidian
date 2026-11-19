@@ -283,7 +283,7 @@ export class GraphTree {
         // Clear any previous content.
         container.replaceChildren();
 
-        // Build the search field, sort choice, stats line, list, and legend.
+        // Build the search field, sort choice, stats line, list, and toast.
         this.search = el("div", "cg-search");
         this.input = document.createElement("input");
         this.sortSelect = document.createElement("select");
@@ -350,7 +350,7 @@ export class GraphTree {
         window.clearTimeout(this.toastTimer);
     }
 
-    /** Build the toolbar, stats line, list, legend, and toast. */
+    /** Build the toolbar, stats line, list, footer gutter, and toast. */
     private buildChrome(container: HTMLElement): void {
         // Build the search icon, field, and shortcut hint.
         const searchIcon: HTMLElement = el("span", "cg-search-icon");
@@ -391,16 +391,11 @@ export class GraphTree {
         this.toast.setAttribute("role", "status");
         this.toast.setAttribute("aria-live", "polite");
 
-        // Build the footer legend for the two marker colours.
-        const legend: HTMLElement = el("div", "cg-legend");
-        const areaKey: HTMLElement = el("span", "cg-legend-item");
-        areaKey.append(el("i", "cg-swatch cg-swatch--area"), document.createTextNode("area / project"));
-        const programKey: HTMLElement = el("span", "cg-legend-item");
-        programKey.append(el("i", "cg-swatch cg-swatch--program"), document.createTextNode("program"));
-        legend.append(areaKey, programKey);
+        // Build the footer gutter that keeps the list clear of the modal edge.
+        const gutter: HTMLElement = el("div", "cg-gutter");
 
         // Assemble the tree chrome in the prototype order.
-        container.append(tools, this.stats, this.list, legend, this.toast);
+        container.append(tools, this.stats, this.list, gutter, this.toast);
     }
 
     /** Bind the filter, sort, expand, and file action controls. */
