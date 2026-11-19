@@ -40,7 +40,7 @@
     flex-wrap: wrap;
     gap: 7px;
     align-items: center;
-    padding: 10px 0 0;
+    padding: 0px 0 0;
 }
 
 .commitment-graph__tree-host .cg-search {
