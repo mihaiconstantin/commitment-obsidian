@@ -5,15 +5,8 @@
  * because the vault path cannot contain separators or Windows-illegal text.
  */
 
-import type { CommitmentLevel, ContainerIdentity } from "../graph/types";
-
-
-/** File name prefix for each container kind. */
-const KIND_PREFIX: Readonly<Record<CommitmentLevel, string>> = {
-    area: "Area",
-    program: "Program",
-    project: "Project",
-};
+import type { ContainerIdentity } from "../graph/types";
+import { DEFAULT_ID_STYLE, DEFAULT_PATTERNS, ID_STYLES, type IdStyle } from "./file-name";
 
 
 /** Characters that a file name cannot carry on every supported platform. */
@@ -34,25 +27,45 @@ export function sanitizeFileName(id: string): string {
 
 
 /** Return the target file name for one container identity. */
-export function containerFileName(identity: ContainerIdentity): string {
-    // Sanitize the exact identifier.
-    const name: string = sanitizeFileName(identity.id);
-
+export function containerFileName(
+    identity: ContainerIdentity,
+    pattern: string = DEFAULT_PATTERNS[identity.kind],
+    style: IdStyle = DEFAULT_ID_STYLE,
+): string {
     // Reject an identifier with no usable file name text.
-    if (name === "") {
+    if (sanitizeFileName(identity.id) === "") {
         // Report the unusable identifier.
         throw new Error(`Container identifier '${identity.id}' has no usable file name.`);
     }
 
-    // Prefix the name with its container kind.
-    return `${KIND_PREFIX[identity.kind]} - ${name}.md`;
+    // Render {{id}} with the styled identifier, falling back when the pattern is blank.
+    // Use a replacer so an identifier containing `$` stays literal.
+    const rendered: string = (pattern.trim() === "" ? DEFAULT_PATTERNS[identity.kind] : pattern)
+        .replace(/\{\{id\}\}/g, (): string => ID_STYLES[style].format(identity.id));
+
+    // Sanitize the rendered basename so a pattern cannot inject a separator.
+    const name: string = sanitizeFileName(rendered);
+
+    // Reject a pattern that renders no usable name.
+    if (name === "") {
+        // Report the unusable pattern.
+        throw new Error(`Container pattern '${pattern}' has no usable file name.`);
+    }
+
+    // Append the markdown extension to the rendered basename.
+    return `${name}.md`;
 }
 
 
 /** Return the vault path for one container in the configured folder. */
-export function containerPath(identity: ContainerIdentity, folder: string): string {
+export function containerPath(
+    identity: ContainerIdentity,
+    folder: string,
+    pattern: string = DEFAULT_PATTERNS[identity.kind],
+    style: IdStyle = DEFAULT_ID_STYLE,
+): string {
     // Derive the file name before joining the folder.
-    const name: string = containerFileName(identity);
+    const name: string = containerFileName(identity, pattern, style);
 
     // Normalize the configured folder separators and edges.
     const normalized: string = folder

@@ -9,6 +9,7 @@ import { moment, TFile, TFolder, type App, type TAbstractFile } from "obsidian";
 
 import { parseFrontmatter } from "../frontmatter/parser";
 import { CommitmentGraph } from "../graph/commitment-graph";
+import { DEFAULT_ID_STYLE, type IdStyle } from "./file-name";
 import type { CommitmentLevel, ContainerIdentity } from "../graph/types";
 import { createFailure, createPathFailure, describeFailure } from "../plugin-failure";
 import type { ContainerCreationSettings } from "../settings/settings";
@@ -28,16 +29,21 @@ export class VaultContainerFileActions implements ContainerFileActions {
     /** Supplier for one kind's creation settings, read at activation time. */
     private readonly settingsFor: (kind: CommitmentLevel) => ContainerCreationSettings;
 
+    /** Supplier for the global identifier style, read at activation time. */
+    private readonly styleFor: () => IdStyle;
+
     /** Construct the actions for one graph and creation settings supplier. */
     constructor(
         app: App,
         graph: CommitmentGraph,
         settingsFor: (kind: CommitmentLevel) => ContainerCreationSettings,
+        styleFor: () => IdStyle = (): IdStyle => DEFAULT_ID_STYLE,
     ) {
-        // Store the app, graph, and settings supplier.
+        // Store the app, graph, and settings suppliers.
         this.app = app;
         this.graph = graph;
         this.settingsFor = settingsFor;
+        this.styleFor = styleFor;
     }
 
     /** Return whether the row opens an indexed file or creates one. */
@@ -65,7 +71,7 @@ export class VaultContainerFileActions implements ContainerFileActions {
         let target: string;
         try {
             // Derive the configured target path.
-            target = containerPath(identity, settings.folderPath);
+            target = containerPath(identity, settings.folderPath, settings.pattern, this.styleFor());
         } catch (error) {
             // Report the path-naming failure with the affected kind and identifier.
             throw createFailure(

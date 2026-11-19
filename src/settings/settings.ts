@@ -5,6 +5,12 @@
  * legacy top-level presentation mode so existing installations keep working.
  */
 
+import {
+    DEFAULT_ID_STYLE,
+    DEFAULT_PATTERNS,
+    isIdStyle,
+    type IdStyle,
+} from "../containers/file-name";
 import type { CommitmentLevel } from "../graph/types";
 
 
@@ -19,11 +25,17 @@ export interface ContainerCreationSettings {
 
     /** Vault folder for new files, or empty for the vault root. */
     readonly folderPath: string;
+
+    /** Basename pattern without extension; `{{id}}` marks the identifier. */
+    readonly pattern: string;
 }
 
 
 /** Creation settings for every container kind. */
 export interface CommitmentCreationSettings {
+    /** How the identifier is capitalized inside created file names. */
+    readonly idStyle: IdStyle;
+
     /** Area creation settings. */
     readonly area: ContainerCreationSettings;
 
@@ -53,16 +65,20 @@ export interface CommitmentSettings {
 
 
 /** Empty creation settings for one kind. */
-const EMPTY_CREATION: ContainerCreationSettings = { templatePath: "", folderPath: "" };
+function emptyCreation(kind: CommitmentLevel): ContainerCreationSettings {
+    // Default the pattern to the name earlier releases wrote.
+    return { templatePath: "", folderPath: "", pattern: DEFAULT_PATTERNS[kind] };
+}
 
 
 /** Settings used before the data file supplies any. */
 export const DEFAULT_SETTINGS: CommitmentSettings = {
     presentation: { mode: "json" },
     creation: {
-        area: EMPTY_CREATION,
-        program: EMPTY_CREATION,
-        project: EMPTY_CREATION,
+        idStyle: DEFAULT_ID_STYLE,
+        area: emptyCreation("area"),
+        program: emptyCreation("program"),
+        project: emptyCreation("project"),
     },
 };
 
@@ -143,14 +159,30 @@ function readVaultPath(value: unknown): string {
 }
 
 
+/** Read one basename pattern, falling back on a malformed or empty value. */
+function readPattern(value: unknown, kind: CommitmentLevel): string {
+    // Require exact text with visible content.
+    if (typeof value !== "string" || value.trim() === "") {
+        // Return the kind's default pattern.
+        return DEFAULT_PATTERNS[kind];
+    }
+
+    // Keep the pattern text as stored.
+    return value;
+}
+
+
 /** Read one kind's creation settings, ignoring malformed values. */
-function readCreation(value: unknown): ContainerCreationSettings {
+function readCreation(value: unknown, kind: CommitmentLevel): ContainerCreationSettings {
     // Read the template and folder paths without trusting their shape.
     const templatePath: string = readVaultPath(ownValue(value, "templatePath"));
     const folderPath: string = readVaultPath(ownValue(value, "folderPath"));
 
-    // Return the normalized pair.
-    return { templatePath, folderPath };
+    // Read the basename pattern, defaulting a malformed or empty value.
+    const pattern: string = readPattern(ownValue(value, "pattern"), kind);
+
+    // Return the normalized triple.
+    return { templatePath, folderPath, pattern };
 }
 
 
@@ -171,15 +203,21 @@ export function readCommitmentSettings(data: unknown): CommitmentSettings {
 
     // Read each known creation kind and ignore unknown kind keys.
     const creationSource: unknown = ownValue(data, "creation");
+
+    // Read the global style, falling back on an unknown value.
+    const storedStyle: unknown = ownValue(creationSource, "idStyle");
+    const idStyle: IdStyle = isIdStyle(storedStyle) ? storedStyle : DEFAULT_ID_STYLE;
+
+    // Read each kind with its own default pattern.
     const creation: Record<CommitmentLevel, ContainerCreationSettings> = {
-        area: readCreation(ownValue(creationSource, "area")),
-        program: readCreation(ownValue(creationSource, "program")),
-        project: readCreation(ownValue(creationSource, "project")),
+        area: readCreation(ownValue(creationSource, "area"), "area"),
+        program: readCreation(ownValue(creationSource, "program"), "program"),
+        project: readCreation(ownValue(creationSource, "project"), "project"),
     };
 
     // Return the normalized settings shape.
     return {
         presentation: { mode },
-        creation,
+        creation: { idStyle, ...creation },
     };
 }

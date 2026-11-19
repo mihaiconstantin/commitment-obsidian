@@ -26,9 +26,22 @@ describe("commitment settings", () => {
         const settings: CommitmentSettings = readCommitmentSettings({
             presentation: { mode: "html" },
             creation: {
-                area: { templatePath: "Templates/area.md", folderPath: "Commitments/Areas" },
-                program: { templatePath: "Templates/program.md", folderPath: "Commitments/Programs" },
-                project: { templatePath: "Templates/project.md", folderPath: "Commitments/Projects" },
+                idStyle: "none",
+                area: {
+                    templatePath: "Templates/area.md",
+                    folderPath: "Commitments/Areas",
+                    pattern: "Area - {{id}}",
+                },
+                program: {
+                    templatePath: "Templates/program.md",
+                    folderPath: "Commitments/Programs",
+                    pattern: "Program - {{id}}",
+                },
+                project: {
+                    templatePath: "Templates/project.md",
+                    folderPath: "Commitments/Projects",
+                    pattern: "Project - {{id}}",
+                },
             },
         });
 
@@ -36,11 +49,68 @@ describe("commitment settings", () => {
         expect(settings).toEqual({
             presentation: { mode: "html" },
             creation: {
-                area: { templatePath: "Templates/area.md", folderPath: "Commitments/Areas" },
-                program: { templatePath: "Templates/program.md", folderPath: "Commitments/Programs" },
-                project: { templatePath: "Templates/project.md", folderPath: "Commitments/Projects" },
+                idStyle: "none",
+                area: {
+                    templatePath: "Templates/area.md",
+                    folderPath: "Commitments/Areas",
+                    pattern: "Area - {{id}}",
+                },
+                program: {
+                    templatePath: "Templates/program.md",
+                    folderPath: "Commitments/Programs",
+                    pattern: "Program - {{id}}",
+                },
+                project: {
+                    templatePath: "Templates/project.md",
+                    folderPath: "Commitments/Projects",
+                    pattern: "Project - {{id}}",
+                },
             },
         });
+    });
+
+    it("defaults the pattern and style for stored data that lacks them", () => {
+        // Read a pre-feature object with no pattern or style.
+        const settings: CommitmentSettings = readCommitmentSettings({
+            creation: {
+                area: { templatePath: "", folderPath: "" },
+                project: { templatePath: "", folderPath: "" },
+            },
+        });
+
+        // Require the shipped defaults per kind and the exact-id style.
+        expect(settings.creation.idStyle).toBe("none");
+        expect(settings.creation.area.pattern).toBe("Area - {{id}}");
+        expect(settings.creation.project.pattern).toBe("Project - {{id}}");
+        expect(settings.creation.program.pattern).toBe("Program - {{id}}");
+    });
+
+    it("keeps stored patterns and styles and rejects malformed ones", () => {
+        // Read a stored custom pattern with an unknown style and a blank pattern.
+        const settings: CommitmentSettings = readCommitmentSettings({
+            creation: {
+                idStyle: "titleCase",
+                area: { templatePath: "", folderPath: "", pattern: "Area: {{id}}" },
+                program: { templatePath: "", folderPath: "", pattern: "   " },
+            },
+        });
+
+        // Require the stored pattern to survive unchanged.
+        expect(settings.creation.area.pattern).toBe("Area: {{id}}");
+        expect(settings.creation.idStyle).toBe("titleCase");
+
+        // Require a blank pattern to fall back to the kind's default.
+        expect(settings.creation.program.pattern).toBe("Program - {{id}}");
+
+        // Require an unknown style to fall back to the default.
+        expect(readCommitmentSettings({
+            creation: { idStyle: "shouty" },
+        }).creation.idStyle).toBe("none");
+
+        // Require a non-text pattern to fall back to the kind's default.
+        expect(readCommitmentSettings({
+            creation: { project: { pattern: 4 } },
+        }).creation.project.pattern).toBe("Project - {{id}}");
     });
 
     it("prefers the nested mode over the legacy mode", () => {
@@ -77,8 +147,16 @@ describe("commitment settings", () => {
             },
         });
 
-        expect(settings.creation.area).toEqual({ templatePath: "", folderPath: "" });
-        expect(settings.creation.project).toEqual({ templatePath: "", folderPath: "" });
+        expect(settings.creation.area).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Area - {{id}}",
+        });
+        expect(settings.creation.project).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Project - {{id}}",
+        });
     });
 
     it("trims and normalizes nested vault paths", () => {
@@ -95,6 +173,7 @@ describe("commitment settings", () => {
         expect(settings.creation.area).toEqual({
             templatePath: "Templates/area.md",
             folderPath: "Commitments/Areas",
+            pattern: "Area - {{id}}",
         });
     });
 
@@ -118,8 +197,16 @@ describe("commitment settings", () => {
                 program: { templatePath: "\\\\server\\share\\program.md", folderPath: "//server/share" },
             },
         });
-        expect(windows.creation.area).toEqual({ templatePath: "", folderPath: "" });
-        expect(windows.creation.program).toEqual({ templatePath: "", folderPath: "" });
+        expect(windows.creation.area).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Area - {{id}}",
+        });
+        expect(windows.creation.program).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Program - {{id}}",
+        });
 
         // Drop an embedded traversal segment.
         const embedded: CommitmentSettings = readCommitmentSettings({
@@ -127,7 +214,11 @@ describe("commitment settings", () => {
                 project: { templatePath: "Templates/../project.md", folderPath: "Commitments/../Projects" },
             },
         });
-        expect(embedded.creation.project).toEqual({ templatePath: "", folderPath: "" });
+        expect(embedded.creation.project).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Project - {{id}}",
+        });
     });
 
     it("normalizes current-directory segments before rejecting rooted paths", () => {
@@ -137,7 +228,11 @@ describe("commitment settings", () => {
                 area: { templatePath: "./C:/vault/area.md", folderPath: "./C:/vault" },
             },
         });
-        expect(drive.creation.area).toEqual({ templatePath: "", folderPath: "" });
+        expect(drive.creation.area).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Area - {{id}}",
+        });
 
         // Require a dot-prefixed UNC path to be dropped.
         const unc: CommitmentSettings = readCommitmentSettings({
@@ -145,7 +240,11 @@ describe("commitment settings", () => {
                 area: { templatePath: "./\\server\\share\\area.md", folderPath: "./\\server\\share" },
             },
         });
-        expect(unc.creation.area).toEqual({ templatePath: "", folderPath: "" });
+        expect(unc.creation.area).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Area - {{id}}",
+        });
 
         // Require an interior dot segment to be removed.
         const interior: CommitmentSettings = readCommitmentSettings({
@@ -156,6 +255,7 @@ describe("commitment settings", () => {
         expect(interior.creation.program).toEqual({
             templatePath: "Templates/program.md",
             folderPath: "a/b",
+            pattern: "Program - {{id}}",
         });
 
         // Require a path made only of a dot segment to be unset.
@@ -164,7 +264,11 @@ describe("commitment settings", () => {
                 project: { templatePath: ".", folderPath: "./" },
             },
         });
-        expect(dot.creation.project).toEqual({ templatePath: "", folderPath: "" });
+        expect(dot.creation.project).toEqual({
+            templatePath: "",
+            folderPath: "",
+            pattern: "Project - {{id}}",
+        });
     });
 
     it("ignores an unsupported nested or legacy presentation mode", () => {

@@ -113,6 +113,7 @@ export class GraphModal extends Modal {
             this.app,
             this.result.graph,
             (kind) => this.creation()[kind],
+            () => this.creation().idStyle,
         );
 
         // Wrap the adapter so success closes the modal and failure reports once.

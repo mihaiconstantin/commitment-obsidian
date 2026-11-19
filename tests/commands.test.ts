@@ -202,9 +202,14 @@ describe("commitment graph commands", () => {
         expect(plugin.data).toEqual({
             presentation: { mode: "html" },
             creation: {
-                area: { templatePath: "", folderPath: "" },
-                program: { templatePath: "", folderPath: "" },
-                project: { templatePath: "Templates/project.md", folderPath: "Commitments/Projects" },
+                idStyle: "none",
+                area: { templatePath: "", folderPath: "", pattern: "Area - {{id}}" },
+                program: { templatePath: "", folderPath: "", pattern: "Program - {{id}}" },
+                project: {
+                    templatePath: "Templates/project.md",
+                    folderPath: "Commitments/Projects",
+                    pattern: "Project - {{id}}",
+                },
             },
         });
     });
@@ -230,20 +235,30 @@ describe("commitment graph commands", () => {
         const next: CommitmentSettings = {
             presentation: { mode: "html" },
             creation: {
-                area: { templatePath: " Templates/area.md ", folderPath: "/absolute" },
-                program: { templatePath: "../escape.md", folderPath: "Programs" },
-                project: { templatePath: "", folderPath: "" },
+                idStyle: "none",
+                area: {
+                    templatePath: " Templates/area.md ",
+                    folderPath: "/absolute",
+                    pattern: "Area - {{id}}",
+                },
+                program: {
+                    templatePath: "../escape.md",
+                    folderPath: "Programs",
+                    pattern: "Program - {{id}}",
+                },
+                project: { templatePath: "", folderPath: "", pattern: "Project - {{id}}" },
             },
         };
         await plugin.saveSettings(next);
 
-        // Require only the normalized nested shape in the saved data.
+        // Require the normalized shape, with the default patterns filled in.
         expect(plugin.data).toEqual({
             presentation: { mode: "html" },
             creation: {
-                area: { templatePath: "Templates/area.md", folderPath: "" },
-                program: { templatePath: "", folderPath: "Programs" },
-                project: { templatePath: "", folderPath: "" },
+                idStyle: "none",
+                area: { templatePath: "Templates/area.md", folderPath: "", pattern: "Area - {{id}}" },
+                program: { templatePath: "", folderPath: "Programs", pattern: "Program - {{id}}" },
+                project: { templatePath: "", folderPath: "", pattern: "Project - {{id}}" },
             },
         });
 
