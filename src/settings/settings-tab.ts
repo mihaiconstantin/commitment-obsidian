@@ -11,6 +11,12 @@ import {
     type TextComponent,
 } from "obsidian";
 
+import {
+    DEFAULT_PATTERNS,
+    ID_STYLES,
+    isIdStyle,
+    type IdStyle,
+} from "../containers/file-name";
 import type { CommitmentLevel } from "../graph/types";
 import type {
     CommitmentSettings,
@@ -34,8 +40,8 @@ interface CreationField {
     /** Container kind edited by the field. */
     readonly kind: CommitmentLevel;
 
-    /** Whether the field edits the template or the folder. */
-    readonly field: "templatePath" | "folderPath";
+    /** Which creation value the field edits. */
+    readonly field: "templatePath" | "folderPath" | "pattern";
 }
 
 
@@ -82,17 +88,27 @@ export class CommitmentSettingTab extends PluginSettingTab {
         // Clear any previous content.
         container.empty();
 
-        // Render the unchanged display-mode choice.
+        // Render the plugin-wide choices.
+        this.heading(container, "General");
         this.presentationSetting(container);
+        this.styleSetting(container);
 
-        // Add the template and folder fields for every container kind.
+        // Add the three creation fields for every container kind.
         for (const kind of ["area", "program", "project"] as const) {
-            // Render the template path field.
-            this.creationSetting(container, { kind, field: "templatePath" });
+            // Group the kind's fields under its own heading.
+            this.heading(container, KIND_LABELS[kind]);
 
-            // Render the folder path field.
+            // Render the template, folder, and pattern fields.
+            this.creationSetting(container, { kind, field: "templatePath" });
             this.creationSetting(container, { kind, field: "folderPath" });
+            this.creationSetting(container, { kind, field: "pattern" });
         }
+    }
+
+    /** Render one group heading using the setting widget Obsidian provides. */
+    private heading(container: HTMLElement, text: string): void {
+        // Use the heading form of a setting, which exists at the minimum app version.
+        new Setting(container).setName(text).setHeading();
     }
 
     /** Persist one creation field change with the other settings intact. */
@@ -117,6 +133,16 @@ export class CommitmentSettingTab extends PluginSettingTab {
     private copyFor(field: CreationField): CreationCopy {
         // Read the readable kind label.
         const label: string = KIND_LABELS[field.kind];
+
+        // Describe the pattern field.
+        if (field.field === "pattern") {
+            // Return the pattern copy with the placeholder spelled out.
+            return {
+                name: `${label} file name`,
+                description: `Base name for new ${field.kind} files without the extension. Use {{id}} for the identifier. This value must contain a unique part.`,
+                placeholder: DEFAULT_PATTERNS[field.kind],
+            };
+        }
 
         // Describe the template field.
         if (field.field === "templatePath") {
@@ -158,6 +184,34 @@ export class CommitmentSettingTab extends PluginSettingTab {
                         void this.host.saveSettings({
                             ...this.host.settings,
                             presentation: { mode: value },
+                        });
+                    }
+                });
+            });
+    }
+
+    /** Render the identifier style choice. */
+    private styleSetting(container: HTMLElement): void {
+        // Create the style setting.
+        new Setting(container)
+            .setName("File name identifier")
+            .setDesc("How the identifier is written inside created file names. Template placeholders are unchanged.")
+            .addDropdown((dropdown: DropdownComponent): void => {
+                // Offer every supported style.
+                for (const style of Object.keys(ID_STYLES) as IdStyle[]) {
+                    // Add the style with its readable label.
+                    dropdown.addOption(style, ID_STYLES[style].label);
+                }
+
+                // Select the stored style and persist a change.
+                dropdown.setValue(this.host.settings.creation.idStyle);
+                dropdown.onChange((value: string): void => {
+                    // Persist only a supported style.
+                    if (isIdStyle(value)) {
+                        // Save the style with every other setting intact.
+                        void this.host.saveSettings({
+                            ...this.host.settings,
+                            creation: { ...this.host.settings.creation, idStyle: value },
                         });
                     }
                 });

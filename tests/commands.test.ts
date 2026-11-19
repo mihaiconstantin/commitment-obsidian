@@ -164,15 +164,16 @@ describe("commitment graph commands", () => {
         // Read the rendered setting and its selected value.
         const container: HTMLElement = plugin.settingTabs[0]?.containerEl as HTMLElement;
         expect(container.textContent).toContain("Graph view");
-        expect(Setting.instances[0]?.value).toBe("html");
+        const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
+        expect(controls[0]?.value).toBe("html");
 
         // Drive the dropdown handler the way the settings UI does.
-        Setting.instances[0]?.change?.("json");
+        controls[0]?.change?.("json");
         await Promise.resolve();
         expect(plugin.data).toEqual(DEFAULT_SETTINGS);
     });
 
-    it("renders six creation fields and persists one without losing the others", async () => {
+    it("renders grouped creation fields and persists one without losing the others", async () => {
         // Compose the plugin over nested creation settings.
         const { plugin } = await createPlugin(undefined, {
             presentation: { mode: "html" },
@@ -183,19 +184,29 @@ describe("commitment graph commands", () => {
         // Render the registered settings tab.
         plugin.settingTabs[0]?.display();
 
-        // Require the display mode plus one template and one folder per kind.
-        expect(Setting.instances.map((setting) => setting.value)).toEqual([
+        // Require the General, Area, Program, and Project group headings.
+        expect(
+            Setting.instances.filter((setting) => setting.heading).map((setting) => setting.nameEl.textContent),
+        ).toEqual(["General", "Area", "Program", "Project"]);
+
+        // Require the style choice, then template, folder, and pattern per kind.
+        const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
+        expect(controls.map((setting) => setting.value)).toEqual([
             "html",
+            "none",
             "",
             "",
+            "Area - {{id}}",
             "",
             "",
+            "Program - {{id}}",
             "Templates/project.md",
             "Projects",
+            "Project - {{id}}",
         ]);
 
-        // Change the project folder through the text control.
-        Setting.instances[6]?.change?.("Commitments/Projects");
+        // Change the project folder through its text control.
+        controls[9]?.change?.("Commitments/Projects");
         await Promise.resolve();
 
         // Require the complete normalized settings shape with the edited folder.

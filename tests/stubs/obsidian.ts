@@ -280,6 +280,7 @@ export class Setting {
     controlEl: HTMLElement;
     value = "";
     change: ((value: string) => void) | null = null;
+    heading = false;
 
     constructor(containerEl: HTMLElement) {
         Setting.instances.push(this);
@@ -299,6 +300,11 @@ export class Setting {
 
     setDesc(desc: string): this {
         this.descEl.textContent = desc;
+        return this;
+    }
+
+    setHeading(): this {
+        this.heading = true;
         return this;
     }
 
