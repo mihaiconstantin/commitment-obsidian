@@ -228,6 +228,10 @@ describe("text graph presenter", () => {
         expect(styles).toMatch(/\.cg-nm\s*{[^}]*text-overflow:\s*ellipsis;/s);
         // The modal content stays full height so the list can scroll.
         expect(styles).toMatch(/commitment-graph-modal \.modal-content\s*{[^}]*overflow:\s*hidden;/s);
+        // The desktop tree modal pins its height so filtering cannot shrink it.
+        expect(styles).toMatch(
+            /body:not\(\.is-mobile\) \.modal\.commitment-graph-modal\s*{[^}]*height:\s*88vh;/s,
+        );
     });
 
     it("binds the slash shortcut through the modal scope", () => {

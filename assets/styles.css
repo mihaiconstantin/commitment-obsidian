@@ -470,6 +470,11 @@
     max-height: 88vh;
 }
 
+/* Pin the height on desktop so filtering shrinks the list, not the modal. */
+body:not(.is-mobile) .modal.commitment-graph-modal {
+    height: 88vh;
+}
+
 /* Keep the modal content full height so the list scrolls, not the modal. */
 .modal.commitment-graph-modal .modal-content {
     display: flex;
