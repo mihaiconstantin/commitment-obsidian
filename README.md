@@ -98,9 +98,10 @@ The plugin stores one nested settings value:
 {
     "presentation": { "mode": "json" },
     "creation": {
-        "area": { "templatePath": "", "folderPath": "" },
-        "program": { "templatePath": "", "folderPath": "" },
-        "project": { "templatePath": "", "folderPath": "" }
+        "idStyle": "none",
+        "area": { "templatePath": "", "folderPath": "", "pattern": "Area - {{id}}" },
+        "program": { "templatePath": "", "folderPath": "", "pattern": "Program - {{id}}" },
+        "project": { "templatePath": "", "folderPath": "", "pattern": "Project - {{id}}" }
     }
 }
 ```
@@ -109,11 +110,20 @@ The plugin stores one nested settings value:
 top-level `"mode"` value still loads when the nested value is absent. New
 writes always use the nested shape.
 
-For each kind, `templatePath` names a vault Markdown file and `folderPath`
-names a vault folder. Trimmed empty strings mean unset. The vault root is the
-default folder when `folderPath` is empty. Absolute paths, drive-letter paths,
-UNC paths, and any path segment equal to `..` are dropped during read, so they
-behave as unset. Unknown kind keys and malformed values are ignored.
+For each kind, `templatePath` names a vault Markdown file, `folderPath` names a
+vault folder, and `pattern` is the created file name without the `.md`
+extension. `{{id}}` in `pattern` is replaced by the identifier. Trimmed empty
+strings mean unset, and an empty `pattern` falls back to the default for its
+kind. The vault root is the default folder when `folderPath` is empty. Absolute
+paths, drive-letter paths, UNC paths, and any path segment equal to `..` are
+dropped during read, so they behave as unset. Unknown kind keys and malformed
+values are ignored.
+
+`creation.idStyle` controls how `{{id}}` is written in created file names.
+`none` keeps the exact identifier; `titleCase` splits on `-` and capitalizes
+each word (`some-long-id` → `Some Long Id`). The identifier inside the file
+stays exact in both cases. An unknown value reads as `none`. Data files written
+before this setting existed gain `none` and the default patterns.
 
 ## Container creation
 
@@ -121,9 +131,9 @@ The file icons exist only in tree presentation. A pencil opens the indexed
 source file of an explicit area, program, or project. A plus creates the file
 for an area or program that exists only through relationships.
 
-The created path is `<folderPath>/<Kind> - <id>.md`, where `Kind` is `Area`,
-`Program`, or `Project`. An empty folder places the file at the vault root and
-creates no folder. Missing parent folders are created.
+The created path is `<folderPath>/<pattern>.md` with `{{id}}` substituted, where
+the default pattern is `<Kind> - {{id}}`. An empty folder places the file at the
+vault root and creates no folder. Missing parent folders are created.
 
 The exact identifier stays in frontmatter. Only the file name is sanitized:
 path separators, `< > : " / \ | ? *`, and control characters become `-`;
