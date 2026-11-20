@@ -428,6 +428,3 @@ function utf8Bytes(text: string): Uint8Array {
     // Use the standard text encoder.
     return UTF8_ENCODER.encode(text);
 }
-
-
-
