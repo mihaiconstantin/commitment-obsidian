@@ -18,7 +18,7 @@ import {
     describeFailure,
     isPluginFailure,
 } from "../plugin-failure";
-import { compareCodePoints } from "./code-point-order";
+import { compareText } from "./compare-text";
 import type { CanonicalInput, InputSnapshot, SourceDocument } from "./types";
 
 
@@ -235,7 +235,7 @@ export class VaultGraphStore {
         }
     }
 
-    /** Return the eligible vault files in code-point path order. */
+    /** Return the eligible vault files in code-unit path order. */
     private eligibleFiles(): readonly TFile[] {
         // Read every visible vault file.
         const files: readonly TFile[] = this.vault.getFiles();
@@ -244,7 +244,7 @@ export class VaultGraphStore {
         const eligible: TFile[] = files.filter((file: TFile): boolean => isEligible(file));
 
         // Sort by root-relative portable path for deterministic processing.
-        eligible.sort((left: TFile, right: TFile): number => compareCodePoints(left.path, right.path));
+        eligible.sort((left: TFile, right: TFile): number => compareText(left.path, right.path));
 
         // Return the eligible files.
         return eligible;
@@ -317,7 +317,7 @@ function describePathDifference(
     );
 
     // Return a removed captured path before considering additions.
-    for (const path of [...previous.keys()].sort(compareCodePoints)) {
+    for (const path of [...previous.keys()].sort(compareText)) {
         // Report a path that is no longer eligible.
         if (!currentPaths.has(path)) {
             // Return the removed path.

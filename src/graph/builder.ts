@@ -1,9 +1,8 @@
 /**
  * Derive and validate the canonical commitment graph from saved frontmatter.
  *
- * The rules mirror the repository's Python graph builder, excluding legacy
- * recognition. Canonical input reading lives in `canonical-inputs.ts`; this
- * module owns the construction rules and their intermediate collections.
+ * Canonical input reading lives in `canonical-inputs.ts`; this module owns the
+ * construction rules and their intermediate collections.
  *
  * Construction runs in four named stages: reject duplicate representations,
  * establish areas, validate programs, then assemble the area snapshots and
@@ -20,7 +19,7 @@ import type {
     ProjectInput,
 } from "./canonical-inputs";
 import { CanonicalInputReader } from "./canonical-inputs";
-import { compareCodePoints } from "./code-point-order";
+import { compareText } from "./compare-text";
 import type {
     CanonicalInput,
     CommitmentLevel,
@@ -69,13 +68,13 @@ function graphFailure(diagnostic: Diagnostic): Error {
 }
 
 
-/** Return a sorted list of unique strings by code point. */
+/** Return a sorted list of unique strings by code-unit order. */
 function uniqueSorted(values: Iterable<string>): readonly string[] {
     // Deduplicate the values with a set.
     const unique: Set<string> = new Set<string>(values);
 
-    // Return the values in code-point order.
-    return [...unique].sort(compareCodePoints);
+    // Return the values in code-unit order.
+    return [...unique].sort(compareText);
 }
 
 
@@ -110,20 +109,20 @@ function duplicateRepresentation(
         paths.push(item.path);
     }
 
-    // Inspect concept levels in code-point order for deterministic findings.
-    const levels: readonly CommitmentLevel[] = [...groups.keys()].sort(compareCodePoints);
+    // Inspect concept levels in code-unit order for deterministic findings.
+    const levels: readonly CommitmentLevel[] = [...groups.keys()].sort(compareText);
 
     // Return the first duplicate representation.
     for (const level of levels) {
         // Read the identifier groups for this concept level.
         const byIdentifier: Map<string, string[]> = groups.get(level) ?? new Map();
 
-        // Inspect identifiers in code-point order.
+        // Inspect identifiers in code-unit order.
         const identifiersForLevel: readonly string[] = [...byIdentifier.keys()].sort(
-            compareCodePoints,
+            compareText,
         );
         for (const identifier of identifiersForLevel) {
-            // Read the distinct source paths in code-point order.
+            // Read the distinct source paths in code-unit order.
             const paths: readonly string[] = uniqueSorted(
                 byIdentifier.get(identifier) ?? [],
             );
@@ -228,20 +227,20 @@ function buildArea(
         // Add the program with its sorted project identifiers.
         programs.push({
             id: program,
-            projects: [...(programProjects.get(program) ?? [])].sort(compareCodePoints),
+            projects: [...(programProjects.get(program) ?? [])].sort(compareText),
         });
     }
 
     // Sort the programs by identifier.
     programs.sort(
         (left: GraphProgram, right: GraphProgram): number =>
-            compareCodePoints(left.id, right.id),
+            compareText(left.id, right.id),
     );
 
     // Return the area with sorted direct projects and programs.
     return {
         id: area,
-        projects: [...(directProjects.get(area) ?? [])].sort(compareCodePoints),
+        projects: [...(directProjects.get(area) ?? [])].sort(compareText),
         programs,
     };
 }
@@ -255,7 +254,7 @@ function buildArea(
  * list of local variables inside one method.
  */
 export class GraphBuilder {
-    /** Canonical inputs in code-point path order. */
+    /** Canonical inputs in code-unit path order. */
     private readonly ordered: readonly CanonicalInput[];
 
     /** Every established area identifier. */
@@ -293,7 +292,7 @@ export class GraphBuilder {
         // Sort the canonical inputs by portable path for deterministic findings.
         this.ordered = [...inputs].sort(
             (left: CanonicalInput, right: CanonicalInput): number =>
-                compareCodePoints(left.path, right.path),
+                compareText(left.path, right.path),
         );
 
         // Read and classify the canonical inputs in path order.
@@ -537,7 +536,7 @@ export class GraphBuilder {
 
         // Build the sorted area snapshots from every established area.
         const areas: readonly GraphArea[] = [...this.areaValues]
-            .sort(compareCodePoints)
+            .sort(compareText)
             .map(
                 (area: string): GraphArea =>
                     buildArea(area, this.directProjects, this.programAreas, this.programProjects),

@@ -4,6 +4,23 @@ import type { GraphResult } from "../../src/graph/commitment-graph";
 import type { CanonicalInput } from "../../src/graph/types";
 
 
+/** One program in a parsed direct projection. */
+interface ParsedProgram {
+    /** Sorted coordinated project identifiers. */
+    readonly projects: readonly string[];
+}
+
+
+/** One area in a parsed direct projection. */
+interface ParsedArea {
+    /** Sorted direct project identifiers. */
+    readonly projects: readonly string[];
+
+    /** Programs keyed by identifier. */
+    readonly programs: Record<string, ParsedProgram>;
+}
+
+
 function input(path: string, entries: ReadonlyArray<readonly [string, unknown]>): CanonicalInput {
     return { path, frontmatter: new Map<string, unknown>(entries) };
 }
@@ -305,7 +322,7 @@ describe("commitment graph", () => {
 
     it("rejects padded and whitespace-only identifiers", () => {
         // Check every rejected value.
-        for (const identifier of [" padded", "padded ", "   ", "\u001c", ""]) {
+        for (const identifier of [" padded", "padded ", "   ", ""]) {
             expect(() =>
                 CommitmentGraph.build([project("projects/bad.md", identifier)]),
             ).toThrowError(/invalid 'id' value/);
@@ -321,7 +338,7 @@ describe("commitment graph", () => {
         expect(result.graph.getAreas()[0]?.projects).toEqual(["a\uFEFFb"]);
     });
 
-    it("sorts areas, programs, and projects by code point", () => {
+    it("sorts areas, programs, and projects by code unit", () => {
         // Derive the graph from the canonical inputs.
         const result: GraphResult = CommitmentGraph.build([
             project("projects/two.md", "10"),
@@ -342,7 +359,7 @@ describe("commitment graph", () => {
         ]);
     });
 
-    it("orders supplementary-character areas and programs by code point", () => {
+    it("orders supplementary-character areas and programs by code unit", () => {
         // Derive the graph from the canonical inputs.
         const result: GraphResult = CommitmentGraph.build([
             project("projects/emoji.md", "p", "\u{1F600}", "\u{1F600}"),
@@ -351,10 +368,10 @@ describe("commitment graph", () => {
         ]);
 
         expect(result.graph.getAreas().map((entry) => entry.id)).toEqual([
-            "\uFFFD",
             "\u{1F600}",
+            "\uFFFD",
         ]);
-        expect(result.graph.getAreas()[1]?.programs.map((entry) => entry.id)).toEqual([
+        expect(result.graph.getAreas()[0]?.programs.map((entry) => entry.id)).toEqual([
             "\u{1F600}",
         ]);
     });
@@ -386,7 +403,7 @@ describe("commitment graph", () => {
         ]);
     });
 
-    it("orders every input phase by code-point source path", () => {
+    it("orders every input phase by code-unit source path", () => {
         // Derive diagnostics from inputs whose paths sort differently by locale.
         const result: GraphResult = CommitmentGraph.build([
             input("z/unanchored.md", [["type", "note"]]),
@@ -394,7 +411,7 @@ describe("commitment graph", () => {
             input("ä/unanchored.md", [["type", "note"]]),
         ]);
 
-        // Require the code-point order that the Python builder uses.
+        // Require the code-unit order used for stable output.
         expect(result.diagnostics.map((entry) => entry.paths[0])).toEqual([
             "A/unanchored.md",
             "z/unanchored.md",
@@ -413,18 +430,53 @@ describe("commitment graph", () => {
             project("projects/gamma.md", "gamma", "work"),
         ]);
 
-        // Require the exact Python-compatible byte text.
+        // Require the exact generated JSON text.
         expect(result.graph.toJson()).toBe(
             '{\n    "home": {\n        "projects": [\n            "chores"\n        ],\n        "programs": {}\n    },\n    "work": {\n        "projects": [\n            "gamma"\n        ],\n        "programs": {\n            "phd": {\n                "projects": [\n                    "alpha",\n                    "beta"\n                ]\n            }\n        }\n    }\n}\n',
         );
     });
 
-    it("rejects every information separator in an identifier", () => {
-        // Check every rejected value.
-        for (const identifier of ["\u001c", "\u001f", "\u0085"]) {
-            expect(() =>
-                CommitmentGraph.build([project("projects/bad.md", identifier)]),
-            ).toThrowError(/invalid 'id' value/);
-        }
+    it("keeps a __proto__ area key in the direct JSON projection", () => {
+        // Derive a graph whose area identifier is the prototype key.
+        const result: GraphResult = CommitmentGraph.build([
+            project("projects/alpha.md", "alpha", "__proto__"),
+        ]);
+
+        // Parse the generated text into the documented projection shape.
+        const parsed: Record<string, ParsedArea> = JSON.parse(result.graph.toJson());
+
+        // Require the area key to be an own projection entry.
+        expect(Object.keys(parsed)).toEqual(["__proto__"]);
+
+        // Require the area's direct project and empty program map.
+        expect(parsed["__proto__"]).toEqual({
+            projects: ["alpha"],
+            programs: {},
+        });
+    });
+
+    it("keeps a __proto__ program key in the direct JSON projection", () => {
+        // Derive a graph whose program identifier is the prototype key.
+        const result: GraphResult = CommitmentGraph.build([
+            project("projects/alpha.md", "alpha", "work", "__proto__"),
+            project("projects/beta.md", "beta", "work", "__proto__"),
+        ]);
+
+        // Parse the generated text into the documented projection shape.
+        const parsed: Record<string, ParsedArea> = JSON.parse(result.graph.toJson());
+
+        // Require the area key to be an own projection entry.
+        expect(Object.keys(parsed)).toEqual(["work"]);
+
+        // Read the area's program record from the parsed projection.
+        const programs: Record<string, ParsedProgram> | undefined = parsed["work"]?.programs;
+
+        // Require the program key to be an own projection entry.
+        expect(Object.keys(programs ?? {})).toEqual(["__proto__"]);
+
+        // Require the program's coordinated projects.
+        expect(programs?.["__proto__"]).toEqual({
+            projects: ["alpha", "beta"],
+        });
     });
 });

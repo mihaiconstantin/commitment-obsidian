@@ -1,18 +1,12 @@
 /**
  * Parse saved Markdown frontmatter with a pinned browser-compatible YAML
- * library and the reviewed scalar contract.
+ * library and its default YAML 1.2 schema.
  */
 
 import { getFrontMatterInfo, type FrontMatterInfo } from "obsidian";
-import { Document, parseDocument, type Node } from "yaml";
+import { parseDocument, type Document } from "yaml";
 
 import { createFailure } from "../plugin-failure";
-import { createScalarTags, type YamlVersion } from "./scalar-tags";
-import { assertCanonicalTagsResolved } from "./tag-check";
-
-
-/** YAML version used for every bounded frontmatter block. */
-const YAML_VERSION: YamlVersion = "1.2";
 
 
 /** Parse one saved file's frontmatter into own mapping entries. */
@@ -67,18 +61,14 @@ function parseMappedDocument(
     path: string,
     yamlText: string,
 ): ReadonlyMap<string, unknown> {
-    // Reject a YAML directive that bounded frontmatter cannot honor.
-    rejectYamlDirective(path, yamlText);
-
-    // Parse the document with the reviewed options and scalar tags.
+    // Parse the document with the reviewed structural options.
     const document: Document = parseDocument(yamlText, {
-        version: YAML_VERSION,
+        version: "1.2",
         strict: true,
         uniqueKeys: true,
         stringKeys: false,
         merge: true,
         logLevel: "silent",
-        customTags: createScalarTags(YAML_VERSION),
     });
 
     // Reject every parse or duplicate-key error with its source path.
@@ -87,28 +77,11 @@ function parseMappedDocument(
         throw parseFailure(path, document.errors[0]?.message ?? "invalid YAML");
     }
 
-    // Reject unresolved tags on effective canonical fields.
-    if (document.contents !== null) {
-        try {
-            // Inspect the mapping for tagged canonical values.
-            assertCanonicalTagsResolved(
-                document,
-                document.contents as Node,
-            );
-        } catch (error) {
-            // Report the tagged canonical field with its source path.
-            throw parseFailure(
-                path,
-                error instanceof Error ? error.message : "unresolved canonical tag",
-            );
-        }
-    }
-
     // Convert to own mapping entries in a prototype-safe Map.
     let values: unknown;
     try {
-        // Convert the parsed document once.
-        values = convertDocument(document);
+        // Convert the parsed document with the default alias limit.
+        values = document.toJS({ mapAsMap: true });
     } catch (error) {
         // Report the path-scoped conversion failure.
         throw parseFailure(
@@ -144,41 +117,6 @@ function parseMappedDocument(
 
     // Return the canonical mapping.
     return mapping;
-}
-
-
-/** Convert the parsed document without losing big integer precision. */
-function convertDocument(document: Document): unknown {
-    // Convert with map semantics and the reviewed alias policy.
-    const converted: unknown = document.toJS({
-        mapAsMap: true,
-        maxAliasCount: -1,
-    });
-
-    // Return the converted value.
-    return converted;
-}
-
-
-/**
- * Reject a YAML directive inside one bounded frontmatter block.
- *
- * Obsidian ends the block at the next `---` line and a YAML directive requires
- * a document-start line after it, so a directive cannot appear inside a
- * bounded frontmatter block. The Python parser fails on the same blocks.
- */
-function rejectYamlDirective(path: string, yamlText: string): void {
-    // Read the first content line without its terminator.
-    const first: string = (yamlText.split("\n")[0] ?? "").replace(/\r$/, "").trim();
-
-    // Report a directive that cannot be honored inside bounded frontmatter.
-    if (first.startsWith("%")) {
-        // Reject the unsupported directive with its source path.
-        throw parseFailure(
-            path,
-            "YAML directives cannot appear inside frontmatter",
-        );
-    }
 }
 
 

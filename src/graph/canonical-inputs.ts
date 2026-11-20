@@ -120,11 +120,6 @@ const SUPPORT_LEVELS: Readonly<Record<string, true>> = {
 };
 
 
-/** Python whitespace characters, including the information separators. */
-const PYTHON_WHITESPACE: RegExp =
-    /[\t\n\v\f\r \u001c-\u001f\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/u;
-
-
 /** Read one own frontmatter entry as exact text or no value. */
 function textField(input: CanonicalInput, field: CanonicalField): string | null {
     // Report no supplied value for an absent field.
@@ -139,27 +134,6 @@ function textField(input: CanonicalInput, field: CanonicalField): string | null 
 }
 
 
-/** Return the text without leading and trailing Python whitespace. */
-function pythonStrip(value: string): string {
-    // Walk from the start to the first non-whitespace code unit.
-    let start: number = 0;
-    while (start < value.length && PYTHON_WHITESPACE.test(value.charAt(start))) {
-        // Advance past the whitespace character.
-        start += 1;
-    }
-
-    // Walk from the end to the last non-whitespace code unit.
-    let end: number = value.length;
-    while (end > start && PYTHON_WHITESPACE.test(value.charAt(end - 1))) {
-        // Retreat past the whitespace character.
-        end -= 1;
-    }
-
-    // Return the retained slice.
-    return value.slice(start, end);
-}
-
-
 /** Return whether a value is a valid identifier for its concept level. */
 function isValidIdentifier(value: unknown): value is string {
     // Reject every non-text value without coercing it.
@@ -168,8 +142,8 @@ function isValidIdentifier(value: unknown): value is string {
         return false;
     }
 
-    // Reject empty, whitespace-only, and padded values without normalizing.
-    return value !== "" && pythonStrip(value) !== "" && value === pythonStrip(value);
+    // Reject empty and padded values without normalizing.
+    return value !== "" && value === value.trim();
 }
 
 

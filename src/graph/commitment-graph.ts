@@ -8,7 +8,6 @@
 import { createDiagnostic } from "../plugin-failure";
 import { GraphBuilder, type BuiltGraph } from "./builder";
 import type { PendingSupport } from "./canonical-inputs";
-import { serializeProjection } from "./projection-writer";
 import type {
     CanonicalInput,
     CommitmentLevel,
@@ -24,6 +23,23 @@ export interface GraphResult {
 
     /** Nonblocking findings from the same build moment. */
     readonly diagnostics: readonly Diagnostic[];
+}
+
+
+/** One program in the direct JSON projection. */
+interface ProjectedProgram {
+    /** Sorted coordinated project identifiers. */
+    readonly projects: readonly string[];
+}
+
+
+/** One area in the direct JSON projection. */
+interface ProjectedArea {
+    /** Sorted direct project identifiers. */
+    readonly projects: readonly string[];
+
+    /** Programs keyed by identifier. */
+    readonly programs: Record<string, ProjectedProgram>;
 }
 
 
@@ -107,9 +123,23 @@ export class CommitmentGraph {
         return this.areas;
     }
 
-    /** Serialize the direct projection exactly as the Python exporter does. */
+    /** Serialize the direct projection with four-space indentation. */
     toJson(): string {
-        // Render the shared direct projection.
-        return serializeProjection(this.areas);
+        // Use a null prototype so `__proto__` remains an ordinary area key.
+        const projection: Record<string, ProjectedArea> = Object.create(null);
+        for (const area of this.areas) {
+            // Use a null prototype so `__proto__` remains an ordinary program key.
+            const programs: Record<string, ProjectedProgram> = Object.create(null);
+            for (const program of area.programs) {
+                // Add the program with its sorted project identifiers.
+                programs[program.id] = { projects: program.projects };
+            }
+
+            // Add the area with its direct projects and programs.
+            projection[area.id] = { projects: area.projects, programs };
+        }
+
+        // Render the projection with one final newline.
+        return JSON.stringify(projection, null, 4) + "\n";
     }
 }
