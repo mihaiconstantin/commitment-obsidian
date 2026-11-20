@@ -305,12 +305,13 @@ describe("graph tree", () => {
         expect(gamma.textContent).toBe("└gamma");
         expect(gammaLine.children[2]?.textContent).toBe("in program");
 
-        // Require the action marker and inline glyph.
+        // Require the action marker and the requested icon.
         const create: Element = host.querySelector(".cg-file--create") as Element;
         expect(create.getAttribute("data-cg-action")).toBe("create");
         expect(create.getAttribute("aria-hidden")).toBeNull();
+        expect(create.getAttribute("data-icon")).toBe("plus");
         expect(create.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-        expect(create.querySelectorAll("svg path")).toHaveLength(2);
+        expect((host.querySelector(".cg-file--open") as Element).getAttribute("data-icon")).toBe("pencil");
 
         // Clean up the listeners.
         tree.dispose();

@@ -40,6 +40,25 @@ export function normalizePath(path: string): string {
 }
 
 
+/** Replace one element's children with an SVG for the requested icon. */
+export function setIcon(parent: HTMLElement, icon: string): void {
+    // Drop the previous icon children.
+    parent.replaceChildren();
+
+    // Record the requested icon for tests and styling hooks.
+    parent.dataset.icon = icon;
+
+    // Create the minimal SVG that the real helper inserts.
+    const svg: SVGSVGElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.classList.add("svg-icon");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("data-icon", icon);
+
+    // Attach the icon to its parent.
+    parent.append(svg);
+}
+
+
 /** Deterministic local moment used by container creation tests. */
 const MOMENT_NOW: Date = new Date(2026, 0, 2, 3, 4, 5);
 

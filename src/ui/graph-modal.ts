@@ -127,7 +127,7 @@ export class GraphModal extends Modal {
             },
         };
 
-        // Mount the interactive tree with the same behavior as the standalone view.
+        // Mount the interactive tree for this graph.
         const tree: GraphTree = GraphTree.mount(host, this.result.graph.getAreas(), actions);
         this.tree = tree;
 

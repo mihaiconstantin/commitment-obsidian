@@ -1,10 +1,12 @@
 /**
  * Interactive foldable graph tree used by the graph modal.
  *
- * The markup, classes, and behavior mirror the approved standalone HTML view
- * so both surfaces look and work the same. This module uses plain DOM only, so
- * it runs unchanged inside Obsidian and inside a plain browser harness.
+ * The tree is the only production view; the JSON view renders the same graph
+ * without rows. Rows use plain DOM, while icons use Obsidian's `setIcon` so the
+ * tree follows the active theme.
  */
+
+import { setIcon } from "obsidian";
 
 import type { ContainerFileAction, ContainerFileActions } from "../containers/container-file-actions";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
@@ -32,126 +34,20 @@ const FILTER_DELAY: number = 90;
 const TOAST_DURATION: number = 1400;
 
 
-/** Return one element with an optional class and text. */
-function el(tag: string, cls: string = "", text: string = ""): HTMLElement {
-    // Create the element.
-    const node: HTMLElement = document.createElement(tag);
-
-    // Apply the class list when one is supplied.
-    if (cls !== "") {
-        // Add the supplied classes.
-        node.className = cls;
-    }
-
-    // Apply the text when one is supplied.
-    if (text !== "") {
-        // Set the text without interpreting markup.
-        node.textContent = text;
-    }
-
-    // Return the created element.
-    return node;
-}
-
-
-/** Return the search glyph as inline SVG without markup injection. */
-function searchGlyph(): SVGSVGElement {
-    // Create the scalable icon root.
-    const svg: SVGSVGElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "12");
-    svg.setAttribute("height", "12");
-    svg.setAttribute("viewBox", "0 0 16 16");
-    svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "currentColor");
-    svg.setAttribute("stroke-width", "1.6");
-
-    // Add the lens circle.
-    const circle: SVGCircleElement = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("cx", "6.6");
-    circle.setAttribute("cy", "6.6");
-    circle.setAttribute("r", "4.6");
-
-    // Add the handle stroke.
-    const handle: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    handle.setAttribute("d", "M10 10l4 4");
-
-    // Assemble the glyph.
-    svg.append(circle, handle);
-    return svg;
-}
-
-
-/** Build the two-chevron icon that shows the expand or collapse action. */
-function toggleGlyph(outward: boolean): SVGSVGElement {
-    // Create the scalable icon root on the Lucide grid.
-    const svg: SVGSVGElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "16");
-    svg.setAttribute("height", "16");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "currentColor");
-    svg.setAttribute("stroke-width", "2");
-    svg.setAttribute("stroke-linecap", "round");
-    svg.setAttribute("stroke-linejoin", "round");
-    svg.setAttribute("aria-hidden", "true");
-
-    // Point the chevrons outward to expand, as in Obsidian's chevrons-up-down.
-    const upper: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    upper.setAttribute("d", outward ? "m7 9 5-5 5 5" : "m7 4 5 5 5-5");
-
-    // Point the chevrons inward to collapse, as in Obsidian's chevrons-down-up.
-    const lower: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    lower.setAttribute("d", outward ? "m7 15 5 5 5-5" : "m7 20 5-5 5 5");
-
-    // Assemble the glyph.
-    svg.append(upper, lower);
-    return svg;
-}
-
-
-/** Build the pencil or plus icon for one file action. */
-function fileGlyph(action: ContainerFileAction): SVGSVGElement {
-    // Create the scalable icon root on the Lucide grid.
-    const svg: SVGSVGElement = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "14");
-    svg.setAttribute("height", "14");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "currentColor");
-    svg.setAttribute("stroke-width", "2");
-    svg.setAttribute("stroke-linecap", "round");
-    svg.setAttribute("stroke-linejoin", "round");
-    svg.setAttribute("aria-hidden", "true");
-
-    // Draw the pencil for an existing file.
-    if (action === "open") {
-        // Add the pencil body and tip.
-        const body: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        body.setAttribute("d", "M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z");
-        const tip: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        tip.setAttribute("d", "m15 5 4 4");
-
-        // Assemble the pencil.
-        svg.append(body, tip);
-        return svg;
-    }
-
-    // Draw the plus for a missing file.
-    const horizontal: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    horizontal.setAttribute("d", "M5 12h14");
-    const vertical: SVGPathElement = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    vertical.setAttribute("d", "M12 5v14");
-
-    // Assemble the plus.
-    svg.append(horizontal, vertical);
-    return svg;
+/** Return one detached row line. */
+function createLine(): HTMLElement {
+    // Create the line that keeps the body, icon, and count on one row.
+    const line: HTMLElement = document.createElement("div");
+    line.className = "cg-line";
+    return line;
 }
 
 
 /** Return the element text with the active query highlighted. */
 function markedText(text: string, query: string): HTMLElement {
     // Create the text container with the shared name classes.
-    const span: HTMLElement = el("span", "cg-nm cg-mono");
+    const span: HTMLElement = document.createElement("span");
+    span.className = "cg-nm cg-mono";
 
     // Add the plain text when no query is active.
     if (query === "") {
@@ -175,7 +71,7 @@ function markedText(text: string, query: string): HTMLElement {
         // Mark a matched part.
         if (part.toLowerCase() === query.toLowerCase()) {
             // Add the highlight without interpreting markup.
-            span.append(el("mark", "cg-mark", part));
+            span.createEl("mark", { cls: "cg-mark", text: part });
             continue;
         }
 
@@ -193,8 +89,9 @@ function markedText(text: string, query: string): HTMLElement {
  *
  * The class owns the fold state, the active query and order, the toolbar and
  * list elements, the copy confirmation, and the single in-flight file action.
- * Row and icon markup stays in module functions because it depends only on its
- * arguments. Mount one tree per modal and call `dispose()` when it closes.
+ * Row markup stays in class methods; only the line and marked-text helpers
+ * live at module scope. Mount one tree per modal and call `dispose()` when it
+ * closes.
  */
 export class GraphTree {
     /** Areas shown by this tree, in graph order. */
@@ -254,7 +151,7 @@ export class GraphTree {
     /** Whether one file action is already running. */
     private activating: boolean = false;
 
-    /** Whether the tree released its timers and listeners. */
+    /** Whether the tree released its timers. */
     private disposed: boolean = false;
 
     /** Construct and mount one tree inside the supplied container. */
@@ -284,13 +181,13 @@ export class GraphTree {
         container.replaceChildren();
 
         // Build the search field, sort choice, stats line, list, and toast.
-        this.search = el("div", "cg-search");
+        this.search = container.createDiv({ cls: "cg-search" });
         this.input = document.createElement("input");
         this.sortSelect = document.createElement("select");
         this.toggleAll = document.createElement("button");
-        this.stats = el("p", "cg-stats");
-        this.list = el("div", "cg-list");
-        this.toast = el("div", "cg-toast");
+        this.stats = container.createEl("p", { cls: "cg-stats" });
+        this.list = container.createDiv({ cls: "cg-list" });
+        this.toast = container.createDiv({ cls: "cg-toast" });
 
         // Assemble the chrome and attach it to the container.
         this.buildChrome(container);
@@ -336,11 +233,11 @@ export class GraphTree {
         this.render();
     }
 
-    /** Remove the listeners and pending timers owned by this tree. */
+    /** Cancel the pending timers owned by this tree. */
     dispose(): void {
         // Stop repeated calls from rescheduling work.
         if (this.disposed) {
-            // Report that the tree already released its resources.
+            // Report that the tree already released its timers.
             return;
         }
 
@@ -353,14 +250,15 @@ export class GraphTree {
     /** Build the toolbar, stats line, list, footer gutter, and toast. */
     private buildChrome(container: HTMLElement): void {
         // Build the search icon, field, and shortcut hint.
-        const searchIcon: HTMLElement = el("span", "cg-search-icon");
-        searchIcon.append(searchGlyph());
+        const searchIcon: HTMLElement = this.search.createEl("span", { cls: "cg-search-icon" });
+        setIcon(searchIcon, "search");
         this.input.type = "search";
         this.input.placeholder = SEARCH_PLACEHOLDER;
         this.input.setAttribute("aria-label", "Filter the graph");
         this.input.autocomplete = "off";
         this.input.spellcheck = false;
-        this.search.append(searchIcon, this.input, el("kbd", "cg-kbd", "/"));
+        this.search.append(searchIcon, this.input);
+        this.search.createEl("kbd", { cls: "cg-kbd", text: "/" });
 
         // Build the sort control with both offered orders.
         this.sortSelect.className = "cg-select";
@@ -381,7 +279,7 @@ export class GraphTree {
         this.toggleAll.className = "cg-btn cg-toggle";
 
         // Build the tools row.
-        const tools: HTMLElement = el("div", "cg-tools");
+        const tools: HTMLElement = container.createDiv({ cls: "cg-tools" });
         tools.append(this.search, this.sortSelect, this.toggleAll);
 
         // Mark the stats line as a live status region.
@@ -392,7 +290,7 @@ export class GraphTree {
         this.toast.setAttribute("aria-live", "polite");
 
         // Build the footer gutter that keeps the list clear of the modal edge.
-        const gutter: HTMLElement = el("div", "cg-gutter");
+        const gutter: HTMLElement = container.createDiv({ cls: "cg-gutter" });
 
         // Assemble the tree chrome in the prototype order.
         container.append(tools, this.stats, this.list, gutter, this.toast);
@@ -588,8 +486,8 @@ export class GraphTree {
         button.setAttribute("aria-label", label);
         button.title = label;
 
-        // Add the pencil or plus glyph.
-        button.append(fileGlyph(action));
+        // Add the pencil or plus icon.
+        setIcon(button, action === "open" ? "pencil" : "plus");
 
         // Activate the file action without triggering the row body.
         button.addEventListener("click", (event: MouseEvent): void => {
@@ -604,6 +502,17 @@ export class GraphTree {
         return button;
     }
 
+    /** Add one row's file action to its line when the seam offers one. */
+    private appendFileAction(line: HTMLElement, identity: ContainerIdentity): void {
+        // Build the action for this row.
+        const button: HTMLButtonElement | null = this.fileButton(identity);
+
+        // Add the action when the seam offers one.
+        if (button !== null) {
+            line.append(button);
+        }
+    }
+
     /** Add one project row at the supplied depth. */
     private projectRow(
         identifier: string,
@@ -612,10 +521,11 @@ export class GraphTree {
         program: string | null,
     ): HTMLElement {
         // Create the row wrapper.
-        const row: HTMLElement = el("div", "cg-row");
+        const row: HTMLElement = document.createElement("div");
+        row.className = "cg-row";
 
         // Create the line that keeps the body, icon, and count on one row.
-        const line: HTMLElement = el("div", "cg-line");
+        const line: HTMLElement = createLine();
 
         // Create the copy button.
         const leaf: HTMLButtonElement = document.createElement("button");
@@ -625,10 +535,10 @@ export class GraphTree {
         leaf.title = `Copy ${identifier}`;
 
         // Add the depth glyph.
-        const glyph: HTMLElement = el("span", "cg-glyph", program === null ? "·" : "└");
+        leaf.createEl("span", { cls: "cg-glyph", text: program === null ? "·" : "└" });
 
         // Add the highlighted identifier.
-        leaf.append(glyph, markedText(identifier, this.query));
+        leaf.append(markedText(identifier, this.query));
 
         // Copy the identifier on activation.
         leaf.addEventListener("click", (): void => {
@@ -640,18 +550,12 @@ export class GraphTree {
         line.append(leaf);
 
         // Add the file icon immediately after the title.
-        const icon: HTMLButtonElement | null = this.fileButton(
-            rowIdentity("project", identifier, area, program),
-        );
-        if (icon !== null) {
-            // Add the project file action.
-            line.append(icon);
-        }
+        this.appendFileAction(line, rowIdentity("project", identifier, area, program));
 
         // Label a project that a program coordinates after its file action.
         if (program !== null) {
             // Add the program label outside the body button.
-            line.append(el("span", "cg-tag", "in program"));
+            line.createEl("span", { cls: "cg-tag", text: "in program" });
         }
 
         // Return the completed row.
@@ -665,8 +569,9 @@ export class GraphTree {
         const open: boolean = this.query !== "" || !this.foldedAreas.has(area.id);
 
         // Create the row wrapper and its single flex line.
-        const row: HTMLElement = el("div", "cg-row");
-        const line: HTMLElement = el("div", "cg-line");
+        const row: HTMLElement = document.createElement("div");
+        row.className = "cg-row";
+        const line: HTMLElement = createLine();
 
         // Create the area toggle.
         const node: HTMLButtonElement = document.createElement("button");
@@ -677,30 +582,22 @@ export class GraphTree {
         node.style.setProperty("--cg-indent", "0");
 
         // Add the fold chevron.
-        const chevron: HTMLElement = el("span", "cg-chev", "▼");
-
-        // Add the size meter.
-        const meter: HTMLElement = el("span", "cg-meter");
-        const fill: HTMLElement = el("i");
-        fill.style.width = `${this.maxTotal === 0 ? 0 : Math.round(countArea(area) / this.maxTotal * 100)}%`;
-        meter.append(fill);
-
-        // Add the visible project count.
-        const count: HTMLElement = el("span", "cg-num", String(view.total));
+        const chevron: HTMLElement = node.createEl("span", { cls: "cg-chev", text: "▼" });
 
         // Assemble the area body without the meter and count.
         node.append(chevron, markedText(area.id, this.query));
 
-        // Add the body, file icon, meter, and count to the same line.
+        // Add the body and file icon before the meter and count.
         line.append(node);
-        const areaIcon: HTMLButtonElement | null = this.fileButton(
-            rowIdentity("area", area.id, area.id, null),
-        );
-        if (areaIcon !== null) {
-            // Add the area file action.
-            line.append(areaIcon);
-        }
-        line.append(meter, count);
+        this.appendFileAction(line, rowIdentity("area", area.id, area.id, null));
+
+        // Add the size meter.
+        const meter: HTMLElement = line.createEl("span", { cls: "cg-meter" });
+        const fill: HTMLElement = meter.createEl("i");
+        fill.style.width = `${this.maxTotal === 0 ? 0 : Math.round(countArea(area) / this.maxTotal * 100)}%`;
+
+        // Add the visible project count.
+        line.createEl("span", { cls: "cg-num", text: String(view.total) });
 
         // Toggle the area on activation.
         node.addEventListener("click", (): void => {
@@ -745,7 +642,7 @@ export class GraphTree {
         const programOpen: boolean = this.query !== "" || !this.isFolded(area, program);
 
         // Create the program line.
-        const programLine: HTMLElement = el("div", "cg-line");
+        const programLine: HTMLElement = createLine();
 
         // Create the program toggle.
         const programNode: HTMLButtonElement = document.createElement("button");
@@ -758,25 +655,19 @@ export class GraphTree {
         // Add the program identifier.
         const programText: HTMLElement = markedText(program.id, this.query);
 
+        // Add the chevron before the identifier.
+        programNode.createEl("span", { cls: "cg-chev", text: "▼" });
+        programNode.append(programText);
+
+        // Add the body and file icon before the tag and count.
+        programLine.append(programNode);
+        this.appendFileAction(programLine, rowIdentity("program", program.id, area.id, null));
+
         // Mark the program entry.
-        const tag: HTMLElement = el("span", "cg-tag", "program");
+        programLine.createEl("span", { cls: "cg-tag", text: "program" });
 
         // Add the program project count.
-        const programCount: HTMLElement = el("span", "cg-num", String(program.projects.length));
-
-        // Assemble the program body without the tag and count.
-        programNode.append(el("span", "cg-chev", "▼"), programText);
-
-        // Add the body, file icon, tag, and count to the same line.
-        programLine.append(programNode);
-        const programIcon: HTMLButtonElement | null = this.fileButton(
-            rowIdentity("program", program.id, area.id, null),
-        );
-        if (programIcon !== null) {
-            // Add the program file action.
-            programLine.append(programIcon);
-        }
-        programLine.append(tag, programCount);
+        programLine.createEl("span", { cls: "cg-num", text: String(program.projects.length) });
 
         // Toggle the program on activation.
         programNode.addEventListener("click", (): void => {
@@ -807,7 +698,7 @@ export class GraphTree {
         const label: string = expanded ? "Collapse all" : "Expand all";
 
         // Swap the icon and the accessible name to match the action.
-        this.toggleAll.replaceChildren(toggleGlyph(!expanded));
+        setIcon(this.toggleAll, expanded ? "chevrons-down-up" : "chevrons-up-down");
         this.toggleAll.setAttribute("aria-label", label);
         this.toggleAll.title = label;
     }
@@ -851,7 +742,10 @@ export class GraphTree {
         // Report an empty result instead of a blank list.
         if (visibleAreas === 0) {
             // Add the empty message.
-            this.list.append(el("div", "cg-empty", `No area, program, or project matches “${this.query}”.`));
+            this.list.createEl("div", {
+                cls: "cg-empty",
+                text: `No area, program, or project matches “${this.query}”.`,
+            });
         }
 
         // Return focus to the same toggle after the rebuild.

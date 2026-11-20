@@ -1,4 +1,4 @@
-/* Interactive graph tree. Mirrors the approved standalone HTML view. */
+/* Interactive graph tree. */
 .commitment-graph__tree-host {
     display: flex;
     flex-direction: column;
@@ -77,6 +77,12 @@
     transform: translateY(-50%);
     opacity: 0.45;
     display: flex;
+}
+
+.commitment-graph__tree-host .cg-search-icon svg {
+    width: 12px;
+    height: 12px;
+    display: block;
 }
 
 .commitment-graph__tree-host .cg-kbd {
