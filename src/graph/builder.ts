@@ -620,10 +620,7 @@ export function buildGraph(inputs: readonly CanonicalInput[]): BuiltGraph {
     }
 
     // Group project references by program and declaring area.
-    const programProjectGroups: Map<string, Map<string, ProjectEntry[]>> = new Map<
-        string,
-        Map<string, ProjectEntry[]>
-    >();
+    const programProjectGroups: Map<string, Map<string, ProjectEntry[]>> = new Map<string, Map<string, ProjectEntry[]>>();
     for (const entries of normalized.projects.values()) {
         for (const project of entries) {
             // Skip projects with no program relationship.
