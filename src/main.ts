@@ -6,7 +6,7 @@ import { Notice, Plugin, type App, type PluginManifest } from "obsidian";
 
 import { CommitmentGraph, type GraphResult } from "./graph/commitment-graph";
 import { VaultGraphStore, type WriteOutcome } from "./graph/store";
-import type { InputSnapshot } from "./graph/types";
+import type { CanonicalInput } from "./graph/types";
 import { describeFailure } from "./plugin-failure";
 import {
     readCommitmentSettings,
@@ -71,8 +71,8 @@ export default class CommitmentPlugin extends Plugin {
 
         try {
             // Read the saved inputs and build the same graph as Update.
-            const snapshot: InputSnapshot = await this.store.readInputs();
-            const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
+            const inputs: readonly CanonicalInput[] = await this.store.readInputs();
+            const result: GraphResult = CommitmentGraph.build(inputs);
 
             // Display the graph and its warnings without writing.
             this.presenter.show(result, this.settings.presentation.mode);
@@ -85,7 +85,7 @@ export default class CommitmentPlugin extends Plugin {
         }
     }
 
-    /** Derive, recheck, and persist the graph, reporting the outcome. */
+    /** Derive and persist the graph, reporting the outcome. */
     private async runUpdate(): Promise<void> {
         // Require the ready workspace and release the guard on every path.
         if (!this.beginCommand()) {
@@ -95,11 +95,8 @@ export default class CommitmentPlugin extends Plugin {
 
         try {
             // Read the saved inputs and build the graph.
-            const snapshot: InputSnapshot = await this.store.readInputs();
-            const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
-
-            // Reject changed inputs before touching the destination.
-            await this.store.assertUnchanged(snapshot);
+            const inputs: readonly CanonicalInput[] = await this.store.readInputs();
+            const result: GraphResult = CommitmentGraph.build(inputs);
 
             // Create, leave unchanged, or replace the derived output.
             const outcome: WriteOutcome = await this.store.writeGraph(result.graph.toJson());

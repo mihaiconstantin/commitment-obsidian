@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { VaultGraphStore, GRAPH_PATH } from "../../src/graph/store";
-import type { CanonicalInput, InputSnapshot } from "../../src/graph/types";
+import type { CanonicalInput } from "../../src/graph/types";
 import { FakeVault } from "../support/fake-vault";
 
 
@@ -21,10 +21,10 @@ describe("vault graph store", () => {
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
+        // Read the saved inputs.
+        const inputs: readonly CanonicalInput[] = await store.readInputs();
 
-        expect(snapshot.documents.map((document) => document.path)).toEqual([
+        expect(inputs.map((input) => input.path)).toEqual([
             "nested/deep/page.markdown",
             "nested/other.md",
             "top.MD",
@@ -44,10 +44,10 @@ describe("vault graph store", () => {
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
+        // Read the saved inputs.
+        const inputs: readonly CanonicalInput[] = await store.readInputs();
 
-        expect(snapshot.documents.map((document) => document.path)).toEqual([
+        expect(inputs.map((input) => input.path)).toEqual([
             "Templates.md",
             "page.md",
         ]);
@@ -62,15 +62,15 @@ describe("vault graph store", () => {
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
+        // Read the saved inputs.
+        const inputs: readonly CanonicalInput[] = await store.readInputs();
 
         // Read the parsed project input.
-        const project: CanonicalInput | undefined = snapshot.inputs.find(
+        const project: CanonicalInput | undefined = inputs.find(
             (input) => input.path === "projects/alpha.md",
         );
         // Read the parsed plain input.
-        const plain: CanonicalInput | undefined = snapshot.inputs.find(
+        const plain: CanonicalInput | undefined = inputs.find(
             (input: CanonicalInput): boolean => input.path === "notes/plain.md",
         );
         expect(project?.frontmatter.get("id")).toBe("alpha");
@@ -90,62 +90,6 @@ describe("vault graph store", () => {
         );
     });
 
-    it("accepts an unchanged snapshot", async () => {
-        // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ "page.md": "Page.\n" });
-        // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
-
-        await expect(store.assertUnchanged(snapshot)).resolves.toBeUndefined();
-    });
-
-    it("rejects an added eligible file", async () => {
-        // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ "page.md": "Page.\n" });
-        // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
-        // Change the saved vault state.
-        vault.put("added.md", "Added.\n");
-
-        await expect(store.assertUnchanged(snapshot)).rejects.toThrowError(
-            /Saved source 'added\.md' changed/,
-        );
-    });
-
-    it("rejects a removed eligible file", async () => {
-        // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ "page.md": "Page.\n", "other.md": "Other.\n" });
-        // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
-        // Remove the saved vault file.
-        vault.remove("other.md");
-
-        await expect(store.assertUnchanged(snapshot)).rejects.toThrowError(
-            /Saved source 'other\.md' changed/,
-        );
-    });
-
-    it("rejects changed saved text", async () => {
-        // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ "page.md": "Page.\n" });
-        // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
-        // Capture the saved-input snapshot.
-        const snapshot: InputSnapshot = await store.readInputs();
-        // Change the saved vault state.
-        vault.put("page.md", "Changed.\n");
-
-        await expect(store.assertUnchanged(snapshot)).rejects.toThrowError(
-            /Saved source 'page\.md' changed/,
-        );
-    });
-
     it("creates a missing destination", async () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault();
@@ -157,7 +101,7 @@ describe("vault graph store", () => {
         expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toBe("{}\n");
     });
 
-    it("leaves identical bytes untouched", async () => {
+    it("leaves identical text untouched", async () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: "{}\n" });
         // Compose the store over the vault.
@@ -191,46 +135,6 @@ describe("vault graph store", () => {
         );
     });
 
-    it("rejects a destination change between the byte reads", async () => {
-        // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: '{"manual": true}\n' });
-        // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
-        // Capture the original vault method.
-        const original = vault.readBinary.bind(vault);
-        let count: number = 0;
-        vi.spyOn(vault, "readBinary").mockImplementation(async (file) => {
-            count += 1;
-            if (count === 2) {
-                // Change the saved vault state.
-                vault.put(GRAPH_PATH, '{"changed": true}\n');
-            }
-            return original(file);
-        });
-
-        await expect(store.writeGraph("{}\n")).rejects.toThrowError(
-            /Graph destination 'commitment-graph\.json' changed/,
-        );
-        expect(vault.calls.processes).toEqual([]);
-    });
-
-    it("does not write when the process text differs", async () => {
-        // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: '{"manual": true}\n' });
-        // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
-        // Capture the original vault method.
-        const original = vault.process.bind(vault);
-        vi.spyOn(vault, "process").mockImplementation(async (file, fn) => {
-            await original(file, () => '{"intervening": true}\n');
-            return original(file, fn);
-        });
-
-        await expect(store.writeGraph("{}\n")).rejects.toThrowError(
-            /Graph destination 'commitment-graph\.json' changed/,
-        );
-    });
-
     it("reports a creation failure with the destination path", async () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault();
@@ -250,7 +154,7 @@ describe("vault graph store", () => {
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
         // Replace the vault behavior for the case.
-        vi.spyOn(vault, "readBinary").mockRejectedValueOnce(new Error("locked"));
+        vi.spyOn(vault, "read").mockRejectedValueOnce(new Error("locked"));
 
         await expect(store.writeGraph("{}\n")).rejects.toThrowError(
             /Could not read graph destination 'commitment-graph\.json': locked/,

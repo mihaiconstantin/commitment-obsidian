@@ -7,7 +7,7 @@
  */
 
 import type { CanonicalField } from "../frontmatter/canonical-field";
-import { createDiagnostic, createFailure } from "../plugin-failure";
+import { createDiagnostic } from "../plugin-failure";
 import type {
     CanonicalInput,
     CommitmentKind,
@@ -152,15 +152,12 @@ function requiredIdentifier(
     input: CanonicalInput,
     field: CanonicalField,
     kind: CommitmentKind,
-    code: string,
 ): string {
     // Reject an absent required field.
     if (!input.frontmatter.has(field)) {
         // Report the missing field with its source path.
-        throw createFailure(
-            code,
+        throw new Error(
             `Canonical ${kind} container '${input.path}' is missing required field '${field}'.`,
-            [createDiagnostic(code, `Missing required field '${field}'.`, [input.path])],
         );
     }
 
@@ -170,10 +167,8 @@ function requiredIdentifier(
     // Reject a present value that is not a valid identifier.
     if (!isValidIdentifier(value)) {
         // Report the invalid field with its source path.
-        throw createFailure(
-            code,
+        throw new Error(
             `Canonical ${kind} container '${input.path}' has an invalid '${field}' value.`,
-            [createDiagnostic(code, `Invalid '${field}' value.`, [input.path])],
         );
     }
 
@@ -221,16 +216,8 @@ function optionalProjectProgram(input: CanonicalInput): string | null {
     // Reject every other value that is not a valid program identifier.
     if (!isValidIdentifier(value)) {
         // Report the invalid optional relationship.
-        throw createFailure(
-            "invalid_project_program",
+        throw new Error(
             `Canonical project container '${input.path}' has an invalid 'program' value.`,
-            [
-                createDiagnostic(
-                    "invalid_project_program",
-                    "Invalid 'program' value.",
-                    [input.path],
-                ),
-            ],
         );
     }
 
@@ -304,7 +291,7 @@ export class CanonicalInputReader {
                 // Require a valid typed area identifier.
                 this.areas.push({
                     path: input.path,
-                    id: requiredIdentifier(input, "id", kind, "missing_area_identity"),
+                    id: requiredIdentifier(input, "id", kind),
                 });
                 continue;
             }
@@ -314,8 +301,8 @@ export class CanonicalInputReader {
                 // Require valid program identity and area references.
                 this.programs.push({
                     path: input.path,
-                    id: requiredIdentifier(input, "id", kind, "missing_program_identity"),
-                    area: requiredIdentifier(input, "area", kind, "missing_program_area"),
+                    id: requiredIdentifier(input, "id", kind),
+                    area: requiredIdentifier(input, "area", kind),
                 });
                 continue;
             }
@@ -325,8 +312,8 @@ export class CanonicalInputReader {
                 // Require valid project identity and area references.
                 this.projects.push({
                     path: input.path,
-                    id: requiredIdentifier(input, "id", kind, "missing_project_identity"),
-                    area: requiredIdentifier(input, "area", kind, "missing_project_area"),
+                    id: requiredIdentifier(input, "id", kind),
+                    area: requiredIdentifier(input, "area", kind),
                     program: optionalProjectProgram(input),
                 });
                 continue;

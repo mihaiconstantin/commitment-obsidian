@@ -7,7 +7,6 @@ import { DEFAULT_PATTERNS } from "../../src/containers/file-name";
 import { CommitmentGraph } from "../../src/graph/commitment-graph";
 import type { ContainerCreationSettings } from "../../src/settings/settings";
 import type { CanonicalInput, ContainerIdentity } from "../../src/graph/types";
-import { isPluginFailure } from "../../src/plugin-failure";
 import { VaultContainerFileActions } from "../../src/containers/vault-file-actions";
 import { FakeVault } from "../support/fake-vault";
 
@@ -52,8 +51,7 @@ async function failureOf(action: Promise<void>): Promise<string> {
         await action;
         throw new Error("expected the action to reject");
     } catch (error) {
-        // Require a structured plugin failure.
-        expect(isPluginFailure(error)).toBe(true);
+        // Return the readable failure message.
         return error instanceof Error ? error.message : String(error);
     }
 }

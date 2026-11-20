@@ -10,7 +10,7 @@
  * pending until the caller has a membership-checked snapshot.
  */
 
-import { createDiagnostic, createFailure } from "../plugin-failure";
+import { createDiagnostic } from "../plugin-failure";
 import type {
     AreaInput,
     CanonicalInputs,
@@ -58,13 +58,6 @@ export interface BuiltGraph {
 
     /** Nonblocking findings captured before the snapshot exists. */
     readonly diagnostics: Diagnostic[];
-}
-
-
-/** Build one blocking graph failure with its finding. */
-function graphFailure(diagnostic: Diagnostic): Error {
-    // Return the failure carrying the blocking finding.
-    return createFailure("graph_error", diagnostic.message, [diagnostic]);
 }
 
 
@@ -142,15 +135,7 @@ function duplicateRepresentation(
             const message: string = `Multiple ${level} containers represent ${level} identifier '${identifier}': ${rendered}.`;
 
             // Return the duplicate representation failure.
-            return createFailure("duplicate_representation", message, [
-                createDiagnostic(
-                    "duplicate_representation",
-                    message,
-                    paths,
-                    paths.length,
-                    1,
-                ),
-            ]);
+            return new Error(message);
         }
     }
 
@@ -452,7 +437,7 @@ export class GraphBuilder {
                     this.inputs.diagnostics.push(finding);
                 } else {
                     // Raise the graph error from the blocking finding.
-                    throw graphFailure(finding);
+                    throw new Error(finding.message);
                 }
             }
 

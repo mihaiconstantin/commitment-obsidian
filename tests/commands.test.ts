@@ -375,31 +375,6 @@ describe("commitment graph commands", () => {
         expect(vault.calls.processes).toEqual([]);
     });
 
-    it("writes no graph when a source changes during the build", async () => {
-        // Compose the plugin over an in-memory vault.
-        const { plugin, app, vault } = await createPlugin();
-        // Mark the workspace layout ready.
-        app.workspace.triggerLayoutReady();
-        // Capture the original vault method.
-        const original = vault.read.bind(vault);
-        let count: number = 0;
-        vi.spyOn(vault, "read").mockImplementation(async (file) => {
-            count += 1;
-            const text: string = await original(file);
-            if (count === 1) {
-                // Change the saved vault state.
-                vault.put("projects/late.md", project("late"));
-            }
-            return text;
-        });
-
-        // Invoke the registered command.
-        await plugin.commands[1]?.callback?.();
-
-        expect(Notice.instances[0]?.message).toMatch(/Saved source 'projects\/late\.md' changed/);
-        expect(vault.calls.creates).toEqual([]);
-    });
-
     it("rejects an overlapping command with one busy notice", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin();

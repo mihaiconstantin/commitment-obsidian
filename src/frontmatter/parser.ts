@@ -6,8 +6,6 @@
 import { getFrontMatterInfo, type FrontMatterInfo } from "obsidian";
 import { parseDocument, type Document } from "yaml";
 
-import { createFailure } from "../plugin-failure";
-
 
 /** Parse one saved file's frontmatter into own mapping entries. */
 export function parseFrontmatter(
@@ -125,12 +123,6 @@ function parseFailure(path: string, reason: string): Error {
     // Render a readable message that names the source path.
     const message: string = `Could not parse frontmatter in '${path}': ${reason}`;
 
-    // Return the structured failure for the affected source.
-    return createFailure("parse_error", message, [
-        {
-            code: "parse_error",
-            message: reason,
-            paths: [path],
-        },
-    ]);
+    // Return the path-scoped parse failure.
+    return new Error(message);
 }

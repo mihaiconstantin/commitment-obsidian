@@ -72,16 +72,6 @@ export interface GraphArea {
 }
 
 
-/** One saved eligible file and its raw text. */
-export interface SourceDocument {
-    /** Root-relative vault path. */
-    readonly path: string;
-
-    /** Exact saved file text. */
-    readonly text: string;
-}
-
-
 /** One saved file with its parsed frontmatter mapping. */
 export interface CanonicalInput {
     /** Root-relative vault path. */
@@ -89,14 +79,4 @@ export interface CanonicalInput {
 
     /** Parsed frontmatter as own entries. */
     readonly frontmatter: ReadonlyMap<string, unknown>;
-}
-
-
-/** The eligible saved inputs captured at one moment. */
-export interface InputSnapshot {
-    /** Every eligible saved file in path order. */
-    readonly documents: readonly SourceDocument[];
-
-    /** Parsed frontmatter for every eligible saved file. */
-    readonly inputs: readonly CanonicalInput[];
 }
