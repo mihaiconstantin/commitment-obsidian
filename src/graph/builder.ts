@@ -1,44 +1,95 @@
 /**
  * Derive and validate the canonical commitment graph from saved frontmatter.
  *
- * Canonical input reading lives in `canonical-inputs.ts`; this module owns the
- * construction rules and their intermediate collections.
- *
- * Construction runs in four named stages: reject duplicate representations,
- * establish areas, validate programs, then assemble the area snapshots and
+ * Construction runs in two passes: one normalization pass validates and groups
+ * the recognized canonical documents, then one validation and projection pass
+ * rejects duplicate representations and builds the area snapshots and
  * membership indexes. Supports that anchor to a program or project stay
  * pending until the caller has a membership-checked snapshot.
  */
 
+import type { CanonicalField } from "../frontmatter/canonical-field";
 import { createDiagnostic } from "../plugin-failure";
-import type {
-    AreaInput,
-    CanonicalInputs,
-    PendingSupport,
-    ProgramInput,
-    ProjectInput,
-} from "./canonical-inputs";
-import { CanonicalInputReader } from "./canonical-inputs";
 import { compareText } from "./compare-text";
 import type {
     CanonicalInput,
+    CommitmentKind,
     CommitmentLevel,
     Diagnostic,
     GraphArea,
     GraphProgram,
+    PendingSupport,
 } from "./types";
 
 
-/** One collected representation with its concept level. */
-interface LeveledIdentifier {
-    /** Concept level of the representation. */
-    readonly level: CommitmentLevel;
-
-    /** Validated identifier text. */
-    readonly identifier: string;
-
+/** One grouped area container. */
+interface AreaEntry {
     /** Root-relative source path. */
     readonly path: string;
+
+    /** Validated area identifier. */
+    readonly id: string;
+}
+
+
+/** One grouped program container. */
+interface ProgramEntry {
+    /** Root-relative source path. */
+    readonly path: string;
+
+    /** Validated program identifier. */
+    readonly id: string;
+
+    /** Required program area. */
+    readonly area: string;
+}
+
+
+/** One grouped project container. */
+interface ProjectEntry {
+    /** Root-relative source path. */
+    readonly path: string;
+
+    /** Validated project identifier. */
+    readonly id: string;
+
+    /** Required project area. */
+    readonly area: string;
+
+    /** Optional project program. */
+    readonly program: string | null;
+}
+
+
+/** One recognized support association derived from canonical fields. */
+interface SupportAssociation {
+    /** Concept level of the anchored identifier. */
+    readonly level: CommitmentLevel;
+
+    /** Exact anchored identifier text. */
+    readonly identifier: string;
+}
+
+
+/** Validated canonical documents grouped by typed identifier. */
+interface NormalizedInputs {
+    /** Area containers grouped by identifier. */
+    readonly areas: Map<string, AreaEntry[]>;
+
+    /** Program containers grouped by identifier. */
+    readonly programs: Map<string, ProgramEntry[]>;
+
+    /** Project containers grouped by identifier. */
+    readonly projects: Map<string, ProjectEntry[]>;
+
+    /** Areas established only by an area-level support anchor. */
+    readonly supportAreas: string[];
+
+    /** Support anchors that need the finished membership sets. */
+    readonly pendingSupports: PendingSupport[];
+
+    /** Classification findings in source path order. */
+    readonly diagnostics: Diagnostic[];
 }
 
 
@@ -61,6 +112,155 @@ export interface BuiltGraph {
 }
 
 
+/** Canonical kinds recognized by graph construction. */
+const CANONICAL_KINDS: Readonly<Record<string, true>> = {
+    area: true,
+    program: true,
+    project: true,
+    meeting: true,
+    note: true,
+    task: true,
+    board: true,
+};
+
+
+/** Recognized support levels. */
+const SUPPORT_LEVELS: Readonly<Record<string, true>> = {
+    area: true,
+    program: true,
+    project: true,
+};
+
+
+/** Read one own frontmatter entry as exact text or no value. */
+function textField(input: CanonicalInput, field: CanonicalField): string | null {
+    // Report no supplied value for an absent field.
+    if (!input.frontmatter.has(field)) {
+        // Return the absent marker.
+        return null;
+    }
+
+    // Require exact string text for the supplied value.
+    const value: unknown = input.frontmatter.get(field);
+    return typeof value === "string" ? value : null;
+}
+
+
+/** Return whether a value is a valid identifier for its concept level. */
+function isValidIdentifier(value: unknown): value is string {
+    // Reject every non-text value without coercing it.
+    if (typeof value !== "string") {
+        // Report the unsupported value.
+        return false;
+    }
+
+    // Reject empty and padded values without normalizing.
+    return value !== "" && value === value.trim();
+}
+
+
+/** Throw when an identifier is absent or invalid for a required field. */
+function requiredIdentifier(
+    input: CanonicalInput,
+    field: CanonicalField,
+    kind: CommitmentKind,
+): string {
+    // Reject an absent required field.
+    if (!input.frontmatter.has(field)) {
+        // Report the missing field with its source path.
+        throw new Error(
+            `Canonical ${kind} container '${input.path}' is missing required field '${field}'.`,
+        );
+    }
+
+    // Read the supplied value without changing it.
+    const value: unknown = input.frontmatter.get(field);
+
+    // Reject a present value that is not a valid identifier.
+    if (!isValidIdentifier(value)) {
+        // Report the invalid field with its source path.
+        throw new Error(
+            `Canonical ${kind} container '${input.path}' has an invalid '${field}' value.`,
+        );
+    }
+
+    // Return the validated identifier text.
+    return value;
+}
+
+
+/** Return the canonical kind of one input, or null when it is not canonical. */
+function canonicalKind(input: CanonicalInput): CommitmentKind | null {
+    // Read the exact type value as text.
+    const value: string | null = textField(input, "type");
+
+    // Accept only exact supported canonical type values.
+    if (value !== null && CANONICAL_KINDS[value] === true) {
+        // Return the recognized canonical kind.
+        return value as CommitmentKind;
+    }
+
+    // Treat every other document as non-canonical.
+    return null;
+}
+
+
+/** Read one optional project program value using the canonical rules. */
+function optionalProjectProgram(input: CanonicalInput): string | null {
+    // Name the canonical relationship field for typed access.
+    const field: CanonicalField = "program";
+
+    // Treat an absent program field as no relationship.
+    if (!input.frontmatter.has(field)) {
+        // Report no relationship.
+        return null;
+    }
+
+    // Read the present value without changing it.
+    const value: unknown = input.frontmatter.get(field);
+
+    // Treat an explicit null value as no relationship.
+    if (value === null || value === undefined) {
+        // Report no relationship.
+        return null;
+    }
+
+    // Reject every other value that is not a valid program identifier.
+    if (!isValidIdentifier(value)) {
+        // Report the invalid optional relationship.
+        throw new Error(
+            `Canonical project container '${input.path}' has an invalid 'program' value.`,
+        );
+    }
+
+    // Return the validated program identifier.
+    return value;
+}
+
+
+/** Read one support association from its exact dependent fields. */
+function supportAssociation(input: CanonicalInput): SupportAssociation | null {
+    // Read the dependent level and anchor fields as exact text.
+    const level: string | null = textField(input, "level");
+    const anchor: string | null = textField(input, "anchor");
+
+    // Reject a missing or malformed level or anchor.
+    if (level === null || anchor === null || SUPPORT_LEVELS[level] !== true) {
+        // Report no usable association.
+        return null;
+    }
+
+    // Reject an invalid anchored identifier.
+    if (!isValidIdentifier(anchor)) {
+        // Report no usable association.
+        return null;
+    }
+
+    // Return the recognized support association.
+    return { level: level as CommitmentLevel, identifier: anchor };
+}
+
+
 /** Return a sorted list of unique strings by code-unit order. */
 function uniqueSorted(values: Iterable<string>): readonly string[] {
     // Deduplicate the values with a set.
@@ -71,75 +271,163 @@ function uniqueSorted(values: Iterable<string>): readonly string[] {
 }
 
 
-/** Return the blocking duplicate representation failure, if any. */
-function duplicateRepresentation(
-    identifiers: readonly LeveledIdentifier[],
-): Error | null {
-    // Group source paths by concept level and exact identifier text.
-    const groups: Map<CommitmentLevel, Map<string, string[]>> = new Map<
-        CommitmentLevel,
-        Map<string, string[]>
-    >();
-    for (const item of identifiers) {
-        // Read or start the identifier groups for the concept level.
-        let byIdentifier: Map<string, string[]> | undefined = groups.get(item.level);
-        if (byIdentifier === undefined) {
-            // Create the level's identifier groups.
-            byIdentifier = new Map<string, string[]>();
-            groups.set(item.level, byIdentifier);
-        }
+/** Append one entry under its grouping key. */
+function appendGrouped<T>(groups: Map<string, T[]>, key: string, entry: T): void {
+    // Read the existing entries for the grouping key.
+    const entries: T[] | undefined = groups.get(key);
 
-        // Read or start the source paths for the typed identifier.
-        let paths: string[] | undefined = byIdentifier.get(item.identifier);
-        if (paths === undefined) {
-            // Start the identifier's source list.
-            paths = [item.path];
-            byIdentifier.set(item.identifier, paths);
+    // Start a new group when the key has no entries yet.
+    if (entries === undefined) {
+        // Record the first entry under the key.
+        groups.set(key, [entry]);
+        return;
+    }
+
+    // Append to the existing group.
+    entries.push(entry);
+}
+
+
+/** Validate one sorted input list and group its canonical containers. */
+function normalizeInputs(inputs: readonly CanonicalInput[]): NormalizedInputs {
+    // Start the grouped collections for the canonical containers.
+    const areas: Map<string, AreaEntry[]> = new Map<string, AreaEntry[]>();
+    const programs: Map<string, ProgramEntry[]> = new Map<string, ProgramEntry[]>();
+    const projects: Map<string, ProjectEntry[]> = new Map<string, ProjectEntry[]>();
+
+    // Start the area anchors, pending supports, and classification findings.
+    const supportAreas: string[] = [];
+    const pendingSupports: PendingSupport[] = [];
+    const diagnostics: Diagnostic[] = [];
+
+    // Classify every input in path order.
+    for (const input of inputs) {
+        // Read the canonical kind and skip non-canonical documents.
+        const kind: CommitmentKind | null = canonicalKind(input);
+        if (kind === null) {
+            // Continue with the next input.
             continue;
         }
 
-        // Append to the existing source list.
-        paths.push(item.path);
+        // Group a canonical area container's required identity.
+        if (kind === "area") {
+            // Require a valid typed area identifier.
+            const entry: AreaEntry = {
+                path: input.path,
+                id: requiredIdentifier(input, "id", kind),
+            };
+
+            // Group the area container under its identifier.
+            appendGrouped(areas, entry.id, entry);
+            continue;
+        }
+
+        // Group a canonical program container's required identity and area.
+        if (kind === "program") {
+            // Require valid program identity and area references.
+            const entry: ProgramEntry = {
+                path: input.path,
+                id: requiredIdentifier(input, "id", kind),
+                area: requiredIdentifier(input, "area", kind),
+            };
+
+            // Group the program container under its identifier.
+            appendGrouped(programs, entry.id, entry);
+            continue;
+        }
+
+        // Group a canonical project's identity, area, and optional program.
+        if (kind === "project") {
+            // Require valid project identity and area references.
+            const entry: ProjectEntry = {
+                path: input.path,
+                id: requiredIdentifier(input, "id", kind),
+                area: requiredIdentifier(input, "area", kind),
+                program: optionalProjectProgram(input),
+            };
+
+            // Group the project container under its identifier.
+            appendGrouped(projects, entry.id, entry);
+            continue;
+        }
+
+        // Read the support association from its dependent fields.
+        const association: SupportAssociation | null = supportAssociation(input);
+
+        // Diagnose a support container with no usable canonical anchor.
+        if (association === null) {
+            // Report the unresolved input without inventing a target.
+            diagnostics.push(
+                createDiagnostic(
+                    "unresolved_anchor",
+                    `Canonical ${kind} container '${input.path}' has no usable canonical anchor; it is omitted from the commitment graph.`,
+                    [input.path],
+                ),
+            );
+            continue;
+        }
+
+        // Establish an explicit area-level support anchor directly.
+        if (association.level === "area") {
+            // Add the referenced area without inventing a graph node.
+            supportAreas.push(association.identifier);
+            continue;
+        }
+
+        // Defer project and program targets until the graph exists.
+        pendingSupports.push({
+            level: association.level,
+            identifier: association.identifier,
+            path: input.path,
+        });
     }
 
-    // Inspect concept levels in code-unit order for deterministic findings.
-    const levels: readonly CommitmentLevel[] = [...groups.keys()].sort(compareText);
+    // Return the grouped structural inputs and findings.
+    return {
+        areas,
+        programs,
+        projects,
+        supportAreas,
+        pendingSupports,
+        diagnostics,
+    };
+}
+
+
+/** Return the blocking duplicate representation failure for one concept level. */
+function duplicateRepresentation<Entry extends AreaEntry>(
+    level: CommitmentLevel,
+    groups: ReadonlyMap<string, readonly Entry[]>,
+): Error | null {
+    // Inspect identifiers in code-unit order for deterministic findings.
+    const identifiers: readonly string[] = [...groups.keys()].sort(compareText);
 
     // Return the first duplicate representation.
-    for (const level of levels) {
-        // Read the identifier groups for this concept level.
-        const byIdentifier: Map<string, string[]> = groups.get(level) ?? new Map();
-
-        // Inspect identifiers in code-unit order.
-        const identifiersForLevel: readonly string[] = [...byIdentifier.keys()].sort(
-            compareText,
+    for (const identifier of identifiers) {
+        // Read the distinct source paths in code-unit order.
+        const paths: readonly string[] = uniqueSorted(
+            (groups.get(identifier) ?? []).map((entry: Entry): string => entry.path),
         );
-        for (const identifier of identifiersForLevel) {
-            // Read the distinct source paths in code-unit order.
-            const paths: readonly string[] = uniqueSorted(
-                byIdentifier.get(identifier) ?? [],
-            );
 
-            // Skip identifiers represented only once.
-            if (paths.length < 2) {
-                // Continue with the next identifier.
-                continue;
-            }
-
-            // Render the readable path list.
-            const rendered: string = paths
-                .map((path: string): string => `'${path}'`)
-                .join(", ");
-
-            // Build the message naming the level, identifier, and sources.
-            const message: string = `Multiple ${level} containers represent ${level} identifier '${identifier}': ${rendered}.`;
-
-            // Return the duplicate representation failure.
-            return new Error(message);
+        // Skip identifiers represented only once.
+        if (paths.length < 2) {
+            // Continue with the next identifier.
+            continue;
         }
+
+        // Render the readable path list.
+        const rendered: string = paths
+            .map((path: string): string => `'${path}'`)
+            .join(", ");
+
+        // Build the message naming the level, identifier, and sources.
+        const message: string = `Multiple ${level} containers represent ${level} identifier '${identifier}': ${rendered}.`;
+
+        // Return the duplicate representation failure.
+        return new Error(message);
     }
 
-    // Report no duplicate representation.
+    // Report no duplicate representation at this concept level.
     return null;
 }
 
@@ -193,6 +481,44 @@ function programFinding(
 }
 
 
+/** Read every area declared for one program. */
+function declaredProgramAreas(
+    container: ProgramEntry | undefined,
+    groups: ReadonlyMap<string, readonly ProjectEntry[]>,
+): readonly string[] {
+    // Collect every area declared by a project or the container.
+    const areas: Set<string> = new Set<string>(groups.keys());
+    if (container !== undefined) {
+        // Add the program container's declared area.
+        areas.add(container.area);
+    }
+
+    // Return the declared areas in insertion order.
+    return [...areas];
+}
+
+
+/** Read every source path that defines one program. */
+function programSourcePaths(
+    container: ProgramEntry | undefined,
+    groups: ReadonlyMap<string, readonly ProjectEntry[]>,
+): readonly string[] {
+    // Collect every source path for the program definition.
+    const sourcePaths: string[] = [];
+    if (container !== undefined) {
+        // Include the program container path.
+        sourcePaths.push(container.path);
+    }
+    for (const projects of groups.values()) {
+        // Include each project path that names the program.
+        sourcePaths.push(...projects.map((project: ProjectEntry): string => project.path));
+    }
+
+    // Return the collected paths.
+    return sourcePaths;
+}
+
+
 /** Build one sorted area snapshot. */
 function buildArea(
     area: string,
@@ -234,134 +560,72 @@ function buildArea(
 /**
  * Build one graph snapshot from saved canonical inputs.
  *
- * Each stage fills the collections it owns, so a reader can follow the
- * pipeline from duplicate rejection to membership without tracking a long
- * list of local variables inside one method.
+ * The first pass validates and groups every canonical document. The second
+ * pass rejects duplicates, resolves programs, and projects the grouped data
+ * into the area snapshots and membership indexes.
  */
-export class GraphBuilder {
-    /** Canonical inputs in code-unit path order. */
-    private readonly ordered: readonly CanonicalInput[];
+export function buildGraph(inputs: readonly CanonicalInput[]): BuiltGraph {
+    // Sort the canonical inputs by portable path for deterministic findings.
+    const ordered: readonly CanonicalInput[] = [...inputs].sort(
+        (left: CanonicalInput, right: CanonicalInput): number =>
+            compareText(left.path, right.path),
+    );
 
-    /** Every established area identifier. */
-    private readonly areaValues: Set<string> = new Set<string>();
+    // Validate and group every canonical container in path order.
+    const normalized: NormalizedInputs = normalizeInputs(ordered);
 
-    /** Project references grouped by program and declaring area. */
-    private readonly programProjectGroups: Map<string, Map<string, ProjectInput[]>> = new Map<
-        string,
-        Map<string, ProjectInput[]>
-    >();
-
-    /** Unique canonical program containers by identifier. */
-    private readonly programContainers: Map<string, ProgramInput> = new Map<string, ProgramInput>();
-
-    /** Validated area of every declared program. */
-    private readonly programAreas: Map<string, string> = new Map<string, string>();
-
-    /** Coordinated project identifiers of every declared program. */
-    private readonly programProjects: Map<string, readonly string[]> = new Map<
-        string,
-        readonly string[]
-    >();
-
-    /** Identifiers of every declared program. */
-    private readonly programIdentifiers: Set<string> = new Set<string>();
-
-    /** Direct project identifiers by area. */
-    private readonly directProjects: Map<string, string[]> = new Map<string, string[]>();
-
-    /** Structural inputs read from the canonical documents. */
-    private readonly inputs: CanonicalInputs;
-
-    /** Construct the builder for one input list. */
-    constructor(inputs: readonly CanonicalInput[]) {
-        // Sort the canonical inputs by portable path for deterministic findings.
-        this.ordered = [...inputs].sort(
-            (left: CanonicalInput, right: CanonicalInput): number =>
-                compareText(left.path, right.path),
-        );
-
-        // Read and classify the canonical inputs in path order.
-        this.inputs = CanonicalInputReader.read(this.ordered);
+    // Reject duplicate representations before building any node.
+    const conflict: Error | null =
+        duplicateRepresentation("area", normalized.areas) ??
+        duplicateRepresentation("program", normalized.programs) ??
+        duplicateRepresentation("project", normalized.projects);
+    if (conflict !== null) {
+        // Raise the duplicate representation failure.
+        throw conflict;
     }
 
-    /** Run every construction stage and return the built graph data. */
-    build(): BuiltGraph {
-        // Reject duplicate representations before building any node.
-        this.rejectDuplicates();
+    // Establish every area named by a container, support anchor, or project.
+    const areaValues: Set<string> = new Set<string>(normalized.areas.keys());
 
-        // Establish every area named by a container, anchor, or relationship.
-        this.establishAreas();
-
-        // Validate every referenced or container-declared program.
-        this.resolvePrograms();
-
-        // Assemble the area snapshots and membership indexes.
-        return this.assemble();
+    // Add the area established by each area-level support anchor.
+    for (const area of normalized.supportAreas) {
+        // Add the anchored area.
+        areaValues.add(area);
     }
 
-    /** Reject two containers that represent the same typed identifier. */
-    private rejectDuplicates(): void {
-        // List every typed representation for duplicate detection.
-        const representations: LeveledIdentifier[] = [
-            ...this.inputs.areas.map(
-                (input: AreaInput): LeveledIdentifier => ({
-                    level: "area",
-                    identifier: input.id,
-                    path: input.path,
-                }),
-            ),
-            ...this.inputs.programs.map(
-                (input: ProgramInput): LeveledIdentifier => ({
-                    level: "program",
-                    identifier: input.id,
-                    path: input.path,
-                }),
-            ),
-            ...this.inputs.projects.map(
-                (input: ProjectInput): LeveledIdentifier => ({
-                    level: "project",
-                    identifier: input.id,
-                    path: input.path,
-                }),
-            ),
-        ];
-
-        // Reject duplicate representations before building any graph node.
-        const conflict: Error | null = duplicateRepresentation(representations);
-        if (conflict !== null) {
-            // Raise the duplicate representation failure.
-            throw conflict;
-        }
-    }
-
-    /** Establish every area named by a container, support anchor, or project. */
-    private establishAreas(): void {
-        // Add the area established by each canonical container.
-        for (const input of this.inputs.areas) {
-            // Add the container's area.
-            this.areaValues.add(input.id);
-        }
-
-        // Add the area established by each area-level support anchor.
-        for (const area of this.inputs.supportAreas) {
-            // Add the anchored area.
-            this.areaValues.add(area);
-        }
-
-        // Add each program container's area.
-        for (const input of this.inputs.programs) {
+    // Add each program container's area.
+    for (const entries of normalized.programs.values()) {
+        for (const entry of entries) {
             // Add the program's area.
-            this.areaValues.add(input.area);
+            areaValues.add(entry.area);
         }
+    }
 
-        // Add each project's area.
-        for (const input of this.inputs.projects) {
+    // Add each project's area.
+    for (const entries of normalized.projects.values()) {
+        for (const entry of entries) {
             // Add the project's area.
-            this.areaValues.add(input.area);
+            areaValues.add(entry.area);
         }
+    }
 
-        // Group project references by program and declaring area.
-        for (const project of this.inputs.projects) {
+    // Index the unique canonical program containers.
+    const programContainers: Map<string, ProgramEntry> = new Map<string, ProgramEntry>();
+    for (const [identifier, entries] of normalized.programs) {
+        // Record the first container under its validated identifier.
+        const container: ProgramEntry | undefined = entries[0];
+        if (container !== undefined) {
+            programContainers.set(identifier, container);
+        }
+    }
+
+    // Group project references by program and declaring area.
+    const programProjectGroups: Map<string, Map<string, ProjectEntry[]>> = new Map<
+        string,
+        Map<string, ProjectEntry[]>
+    >();
+    for (const entries of normalized.projects.values()) {
+        for (const project of entries) {
             // Skip projects with no program relationship.
             if (project.program === null) {
                 // Continue with the next project.
@@ -369,17 +633,17 @@ export class GraphBuilder {
             }
 
             // Read or start the program's area groups.
-            let groups: Map<string, ProjectInput[]> | undefined = this.programProjectGroups.get(
+            let groups: Map<string, ProjectEntry[]> | undefined = programProjectGroups.get(
                 project.program,
             );
             if (groups === undefined) {
                 // Create the program group map.
-                groups = new Map<string, ProjectInput[]>();
-                this.programProjectGroups.set(project.program, groups);
+                groups = new Map<string, ProjectEntry[]>();
+                programProjectGroups.set(project.program, groups);
             }
 
             // Read or start the area's project list.
-            let projects: ProjectInput[] | undefined = groups.get(project.area);
+            let projects: ProjectEntry[] | undefined = groups.get(project.area);
             if (projects === undefined) {
                 // Create the area project list.
                 projects = [];
@@ -389,209 +653,148 @@ export class GraphBuilder {
             // Add the project under its program and area.
             projects.push(project);
         }
-
-        // Index the unique canonical program containers.
-        for (const input of this.inputs.programs) {
-            // Record the container under its validated identifier.
-            this.programContainers.set(input.id, input);
-        }
     }
 
-    /** Validate every referenced or container-declared program. */
-    private resolvePrograms(): void {
-        // Read the programs declared by a container or a project reference.
-        const declaredPrograms: readonly string[] = uniqueSorted([
-            ...this.programContainers.keys(),
-            ...this.programProjectGroups.keys(),
-        ]);
+    // Validate every referenced or container-declared program.
+    const programAreas: Map<string, string> = new Map<string, string>();
+    const programProjects: Map<string, readonly string[]> = new Map<string, readonly string[]>();
+    const programIdentifiers: Set<string> = new Set<string>();
+    const diagnostics: Diagnostic[] = normalized.diagnostics;
 
-        // Validate each program in identifier order.
-        for (const program of declaredPrograms) {
-            // Read the optional container and the project area groups.
-            const container: ProgramInput | undefined = this.programContainers.get(program);
-            const groups: Map<string, ProjectInput[]> =
-                this.programProjectGroups.get(program) ?? new Map<string, ProjectInput[]>();
+    // Read the programs declared by a container or a project reference.
+    const declaredPrograms: readonly string[] = uniqueSorted([
+        ...programContainers.keys(),
+        ...programProjectGroups.keys(),
+    ]);
 
-            // Read the declared areas and source paths of the program.
-            const declared: readonly string[] = this.declaredAreas(container, groups);
-            const sourcePaths: readonly string[] = this.programSourcePaths(container, groups);
+    // Validate each program in identifier order.
+    for (const program of declaredPrograms) {
+        // Read the optional container and the project area groups.
+        const container: ProgramEntry | undefined = programContainers.get(program);
+        const groups: Map<string, ProjectEntry[]> =
+            programProjectGroups.get(program) ?? new Map<string, ProjectEntry[]>();
 
-            // Read the project count in the single declared area.
-            const projectCount: number =
-                declared.length === 1
-                    ? (groups.get(declared[0] ?? "") ?? []).length
-                    : 0;
+        // Read the declared areas and source paths of the program.
+        const declared: readonly string[] = declaredProgramAreas(container, groups);
+        const sourcePaths: readonly string[] = programSourcePaths(container, groups);
 
-            // Resolve the shared structural finding for the program.
-            const finding: Diagnostic | null = programFinding(
-                program,
-                declared,
-                projectCount,
-                sourcePaths,
-            );
+        // Read the project count in the single declared area.
+        const projectCount: number =
+            declared.length === 1 ? (groups.get(declared[0] ?? "") ?? []).length : 0;
 
-            // Report underfilled programs as warnings; keep contradictions blocking.
-            if (finding !== null) {
-                if (finding.code === "underfilled_program") {
-                    // Retain the nonblocking program warning.
-                    this.inputs.diagnostics.push(finding);
-                } else {
-                    // Raise the graph error from the blocking finding.
-                    throw new Error(finding.message);
-                }
+        // Resolve the shared structural finding for the program.
+        const finding: Diagnostic | null = programFinding(
+            program,
+            declared,
+            projectCount,
+            sourcePaths,
+        );
+
+        // Report underfilled programs as warnings; keep contradictions blocking.
+        if (finding !== null) {
+            if (finding.code === "underfilled_program") {
+                // Retain the nonblocking program warning.
+                diagnostics.push(finding);
+            } else {
+                // Raise the graph error from the blocking finding.
+                throw new Error(finding.message);
             }
-
-            // Use the single validated area and its coordinated projects.
-            const area: string = declared[0] ?? "";
-            const projects: readonly ProjectInput[] = groups.get(area) ?? [];
-
-            // Store the validated program area and coordinated project list.
-            this.programAreas.set(program, area);
-            this.programProjects.set(
-                program,
-                projects.map((project: ProjectInput): string => project.id),
-            );
-            this.programIdentifiers.add(program);
         }
+
+        // Use the single validated area and its coordinated projects.
+        const area: string = declared[0] ?? "";
+        const projects: readonly ProjectEntry[] = groups.get(area) ?? [];
+
+        // Store the validated program area and coordinated project list.
+        programAreas.set(program, area);
+        programProjects.set(
+            program,
+            projects.map((project: ProjectEntry): string => project.id),
+        );
+        programIdentifiers.add(program);
     }
 
-    /** Read every area declared for one program. */
-    private declaredAreas(
-        container: ProgramInput | undefined,
-        groups: ReadonlyMap<string, readonly ProjectInput[]>,
-    ): readonly string[] {
-        // Collect every area declared by a project or the container.
-        const declaredAreas: Set<string> = new Set<string>(groups.keys());
-        if (container !== undefined) {
-            // Add the program container's declared area.
-            declaredAreas.add(container.area);
-        }
-
-        // Return the declared areas in insertion order.
-        return [...declaredAreas];
+    // Group direct projects under their established areas.
+    const directProjects: Map<string, string[]> = new Map<string, string[]>();
+    for (const area of areaValues) {
+        // Start an empty direct project list for each area.
+        directProjects.set(area, []);
     }
 
-    /** Read every source path that defines one program. */
-    private programSourcePaths(
-        container: ProgramInput | undefined,
-        groups: ReadonlyMap<string, readonly ProjectInput[]>,
-    ): readonly string[] {
-        // Collect every source path for the program definition.
-        const sourcePaths: string[] = [];
-        if (container !== undefined) {
-            // Include the program container path.
-            sourcePaths.push(container.path);
-        }
-        for (const projects of groups.values()) {
-            // Include each project path that names the program.
-            sourcePaths.push(...projects.map((project: ProjectInput): string => project.path));
-        }
-
-        // Return the collected paths.
-        return sourcePaths;
-    }
-
-    /** Assemble the area snapshots, membership sets, and container index. */
-    private assemble(): BuiltGraph {
-        // Group direct projects under their established areas.
-        for (const area of this.areaValues) {
-            // Start an empty direct project list for each area.
-            this.directProjects.set(area, []);
-        }
-
-        // Add projects with no program relationship to their area's direct list.
-        for (const project of this.inputs.projects) {
+    // Add projects with no program relationship to their area's direct list.
+    for (const entries of normalized.projects.values()) {
+        for (const project of entries) {
             // Skip projects coordinated by a program.
             if (project.program !== null) {
                 // Continue with the next project.
                 continue;
             }
 
-            // Read or start the direct project list for the project area.
-            const projects: string[] | undefined = this.directProjects.get(project.area);
+            // Read the direct project list for the project area.
+            const projects: string[] | undefined = directProjects.get(project.area);
             if (projects === undefined) {
                 // Start the area's direct project list.
-                this.directProjects.set(project.area, [project.id]);
+                directProjects.set(project.area, [project.id]);
                 continue;
             }
 
             // Append the direct project.
             projects.push(project.id);
         }
-
-        // Build the sorted area snapshots from every established area.
-        const areas: readonly GraphArea[] = [...this.areaValues]
-            .sort(compareText)
-            .map(
-                (area: string): GraphArea =>
-                    buildArea(area, this.directProjects, this.programAreas, this.programProjects),
-            );
-
-        // Return the assembled graph data for the snapshot.
-        return {
-            areas,
-            members: this.members(areas),
-            containerPaths: this.containerPaths(),
-            pendingSupports: this.inputs.pendingSupports,
-            diagnostics: this.inputs.diagnostics,
-        };
     }
 
-    /** Build the typed membership sets from the assembled areas. */
-    private members(areas: readonly GraphArea[]): Readonly<Record<CommitmentLevel, ReadonlySet<string>>> {
-        // Collect the known project identifiers from every area snapshot.
-        const projectIdentifiers: Set<string> = new Set<string>();
-        for (const area of areas) {
-            // Register each direct project under its area.
-            for (const project of area.projects) {
-                // Record the direct project membership.
-                projectIdentifiers.add(project);
-            }
-            for (const program of area.programs) {
-                // Register each coordinated project.
-                for (const project of program.projects) {
-                    // Record the coordinated project membership.
-                    projectIdentifiers.add(project);
-                }
-            }
-        }
+    // Build the sorted area snapshots from every established area.
+    const areas: readonly GraphArea[] = [...areaValues]
+        .sort(compareText)
+        .map(
+            (area: string): GraphArea =>
+                buildArea(area, directProjects, programAreas, programProjects),
+        );
 
-        // Return the membership set for each concept level.
-        return {
-            area: this.areaValues,
-            program: this.programIdentifiers,
-            project: projectIdentifiers,
-        };
+    // Build the membership sets from the normalized data.
+    const members: Readonly<Record<CommitmentLevel, ReadonlySet<string>>> = {
+        area: areaValues,
+        program: programIdentifiers,
+        project: new Set<string>(normalized.projects.keys()),
+    };
+
+    // Start one empty source index per concept level.
+    const containerPaths: Record<CommitmentLevel, Map<string, string>> = {
+        area: new Map<string, string>(),
+        program: new Map<string, string>(),
+        project: new Map<string, string>(),
+    };
+
+    // Record the first explicit area source path for each identifier.
+    for (const [identifier, entries] of normalized.areas) {
+        const entry: AreaEntry | undefined = entries[0];
+        if (entry !== undefined) {
+            containerPaths.area.set(identifier, entry.path);
+        }
     }
 
-    /** Index the explicit container source paths for file actions. */
-    private containerPaths(): Readonly<Record<CommitmentLevel, ReadonlyMap<string, string>>> {
-        // Start one empty source index per concept level.
-        const containerPaths: Record<CommitmentLevel, Map<string, string>> = {
-            area: new Map<string, string>(),
-            program: new Map<string, string>(),
-            project: new Map<string, string>(),
-        };
-
-        // Record each explicit area source path.
-        for (const input of this.inputs.areas) {
-            // Index the area container path.
-            containerPaths.area.set(input.id, input.path);
+    // Record the first explicit program source path for each identifier.
+    for (const [identifier, entries] of normalized.programs) {
+        const entry: ProgramEntry | undefined = entries[0];
+        if (entry !== undefined) {
+            containerPaths.program.set(identifier, entry.path);
         }
-
-        // Record each explicit program source path.
-        for (const input of this.inputs.programs) {
-            // Index the program container path.
-            containerPaths.program.set(input.id, input.path);
-        }
-
-        // Record each explicit project source path.
-        for (const input of this.inputs.projects) {
-            // Index the project container path.
-            containerPaths.project.set(input.id, input.path);
-        }
-
-        // Return the source index by concept level.
-        return containerPaths;
     }
+
+    // Record the first explicit project source path for each identifier.
+    for (const [identifier, entries] of normalized.projects) {
+        const entry: ProjectEntry | undefined = entries[0];
+        if (entry !== undefined) {
+            containerPaths.project.set(identifier, entry.path);
+        }
+    }
+
+    // Return the assembled graph data for the snapshot.
+    return {
+        areas,
+        members,
+        containerPaths,
+        pendingSupports: normalized.pendingSupports,
+        diagnostics,
+    };
 }

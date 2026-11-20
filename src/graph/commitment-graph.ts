@@ -1,18 +1,18 @@
 /**
  * Immutable commitment graph snapshot with structured access and JSON output.
  *
- * Construction lives in `GraphBuilder`; this class owns only the finished
+ * Construction lives in `buildGraph`; this class owns only the finished
  * snapshot and the pending-support diagnosis that needs membership lookups.
  */
 
 import { createDiagnostic } from "../plugin-failure";
-import { GraphBuilder, type BuiltGraph } from "./builder";
-import type { PendingSupport } from "./canonical-inputs";
+import { buildGraph, type BuiltGraph } from "./builder";
 import type {
     CanonicalInput,
     CommitmentLevel,
     Diagnostic,
     GraphArea,
+    PendingSupport,
 } from "./types";
 
 
@@ -88,8 +88,8 @@ export class CommitmentGraph {
 
     /** Build and validate one graph from saved canonical inputs. */
     static build(inputs: readonly CanonicalInput[]): GraphResult {
-        // Run every construction stage.
-        const built: BuiltGraph = new GraphBuilder(inputs).build();
+        // Validate and project every input into the built graph data.
+        const built: BuiltGraph = buildGraph(inputs);
 
         // Create the immutable snapshot, which resolves the pending supports.
         const diagnostics: Diagnostic[] = [...built.diagnostics];

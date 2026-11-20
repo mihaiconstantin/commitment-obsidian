@@ -80,3 +80,16 @@ export interface CanonicalInput {
     /** Parsed frontmatter as own entries. */
     readonly frontmatter: ReadonlyMap<string, unknown>;
 }
+
+
+/** One pending support anchor awaiting graph membership. */
+export interface PendingSupport {
+    /** Concept level of the anchored identifier. */
+    readonly level: CommitmentLevel;
+
+    /** Exact anchored identifier text. */
+    readonly identifier: string;
+
+    /** Root-relative source path. */
+    readonly path: string;
+}
