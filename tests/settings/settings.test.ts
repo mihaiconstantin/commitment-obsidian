@@ -9,22 +9,13 @@ describe("commitment settings", () => {
         // Require the complete default shape.
         expect(readCommitmentSettings(null)).toEqual(DEFAULT_SETTINGS);
         expect(readCommitmentSettings(undefined)).toEqual(DEFAULT_SETTINGS);
-        expect(readCommitmentSettings("html")).toEqual(DEFAULT_SETTINGS);
-    });
-
-    it("loads the legacy top-level presentation mode", () => {
-        // Read both supported legacy modes and keep creation defaults.
-        expect(readCommitmentSettings({ mode: "html" })).toEqual({
-            ...DEFAULT_SETTINGS,
-            presentation: { mode: "html" },
-        });
-        expect(readCommitmentSettings({ mode: "json" })).toEqual(DEFAULT_SETTINGS);
+        expect(readCommitmentSettings("tree")).toEqual(DEFAULT_SETTINGS);
     });
 
     it("loads the nested presentation and creation shape", () => {
         // Read a complete nested value.
         const settings: CommitmentSettings = readCommitmentSettings({
-            presentation: { mode: "html" },
+            presentation: { mode: "tree" },
             creation: {
                 idStyle: "none",
                 area: {
@@ -47,7 +38,7 @@ describe("commitment settings", () => {
 
         // Require the nested values unchanged.
         expect(settings).toEqual({
-            presentation: { mode: "html" },
+            presentation: { mode: "tree" },
             creation: {
                 idStyle: "none",
                 area: {
@@ -111,17 +102,6 @@ describe("commitment settings", () => {
         expect(readCommitmentSettings({
             creation: { project: { pattern: 4 } },
         }).creation.project.pattern).toBe("Project - {{id}}");
-    });
-
-    it("prefers the nested mode over the legacy mode", () => {
-        // Read both shapes with different values.
-        const settings: CommitmentSettings = readCommitmentSettings({
-            mode: "json",
-            presentation: { mode: "html" },
-        });
-
-        // Require the nested presentation.
-        expect(settings.presentation.mode).toBe("html");
     });
 
     it("ignores unknown kind keys and malformed creation values", () => {
@@ -271,10 +251,13 @@ describe("commitment settings", () => {
         });
     });
 
-    it("ignores an unsupported nested or legacy presentation mode", () => {
-        // Read unsupported and malformed modes.
-        expect(readCommitmentSettings({ presentation: { mode: "tree" } }).presentation.mode).toBe("json");
-        expect(readCommitmentSettings({ presentation: { mode: 1 }, mode: "html" }).presentation.mode).toBe("html");
-        expect(readCommitmentSettings({ presentation: { mode: "html" }, mode: "json" }).presentation.mode).toBe("html");
+    it("ignores an unsupported nested presentation mode", () => {
+        // Require the tree mode to load unchanged.
+        expect(readCommitmentSettings({ presentation: { mode: "tree" } }).presentation.mode).toBe("tree");
+
+        // Require unknown and malformed nested modes to fall back to JSON.
+        expect(readCommitmentSettings({ presentation: { mode: "xml" } }).presentation.mode).toBe("json");
+        expect(readCommitmentSettings({ presentation: { mode: 1 } }).presentation.mode).toBe("json");
+        expect(readCommitmentSettings({ presentation: { mode: null } }).presentation.mode).toBe("json");
     });
 });

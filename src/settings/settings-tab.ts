@@ -173,7 +173,7 @@ export class CommitmentSettingTab extends PluginSettingTab {
                 dropdown.addOption("json", "JSON");
 
                 // Offer the foldable tree presentation.
-                dropdown.addOption("html", "Tree");
+                dropdown.addOption("tree", "Tree");
 
                 // Select the stored presentation and persist a change.
                 dropdown.setValue(this.host.settings.presentation.mode);

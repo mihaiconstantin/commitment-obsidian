@@ -52,7 +52,7 @@ describe("container path", () => {
         );
     });
 
-    it("defaults to the names earlier releases wrote", () => {
+    it("defaults each kind to its own pattern", () => {
         // Require the shipped pattern per kind.
         expect(containerFileName(project("alpha"))).toBe("Project - alpha.md");
         expect(containerFileName({ kind: "area", id: "alpha", area: "alpha", program: null })).toBe(

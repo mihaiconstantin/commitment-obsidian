@@ -57,7 +57,7 @@ export class GraphModal extends Modal {
     onOpen(): void {
         // Identify the modal and size it for the tree.
         this.setTitle(TITLE);
-        if (this.mode === "html") {
+        if (this.mode === "tree") {
             // Add the tree sizing classes.
             this.modalEl.classList.add("commitment-graph-modal", "mod-lg");
         }
@@ -67,7 +67,7 @@ export class GraphModal extends Modal {
         content.empty();
 
         // Render the selected shape: the raw projection or the interactive tree.
-        if (this.mode === "html") {
+        if (this.mode === "tree") {
             // Render the interactive tree with file actions.
             this.renderTree(content);
         } else {

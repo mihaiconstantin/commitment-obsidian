@@ -1,8 +1,5 @@
 /**
  * Persisted plugin settings for graph presentation and container creation.
- *
- * The data file stores only the current nested shape. Reading accepts the
- * legacy top-level presentation mode so existing installations keep working.
  */
 
 import {
@@ -15,7 +12,7 @@ import type { CommitmentLevel } from "../graph/types";
 
 
 /** How the graph content is presented. */
-export type PresentationMode = "json" | "html";
+export type PresentationMode = "json" | "tree";
 
 
 /** One container kind's creation settings. */
@@ -66,7 +63,7 @@ export interface CommitmentSettings {
 
 /** Empty creation settings for one kind. */
 function emptyCreation(kind: CommitmentLevel): ContainerCreationSettings {
-    // Default the pattern to the name earlier releases wrote.
+    // Default the pattern to the kind's default.
     return { templatePath: "", folderPath: "", pattern: DEFAULT_PATTERNS[kind] };
 }
 
@@ -86,7 +83,7 @@ export const DEFAULT_SETTINGS: CommitmentSettings = {
 /** Return whether a value is a supported presentation mode. */
 export function isPresentationMode(value: unknown): value is PresentationMode {
     // Accept only the two supported presentations.
-    return value === "json" || value === "html";
+    return value === "json" || value === "tree";
 }
 
 
@@ -188,18 +185,11 @@ function readCreation(value: unknown, kind: CommitmentLevel): ContainerCreationS
 
 /** Read the supported settings from unvalidated plugin data. */
 export function readCommitmentSettings(data: unknown): CommitmentSettings {
-    // Read the nested presentation mode when it is valid.
+    // Read the nested presentation mode without trusting its shape.
     const nested: unknown = ownValue(ownValue(data, "presentation"), "mode");
 
-    // Read the legacy top-level presentation mode for existing installations.
-    const legacy: unknown = ownValue(data, "mode");
-
-    // Prefer the nested mode, then the legacy mode, then the default.
-    const mode: PresentationMode = isPresentationMode(nested)
-        ? nested
-        : isPresentationMode(legacy)
-            ? legacy
-            : "json";
+    // Fall back on JSON for an unsupported mode.
+    const mode: PresentationMode = isPresentationMode(nested) ? nested : "json";
 
     // Read each known creation kind and ignore unknown kind keys.
     const creationSource: unknown = ownValue(data, "creation");

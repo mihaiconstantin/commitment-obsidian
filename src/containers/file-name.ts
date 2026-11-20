@@ -45,7 +45,7 @@ export const ID_STYLES: Readonly<Record<IdStyle, IdStyleSpec>> = {
 export const DEFAULT_ID_STYLE: IdStyle = "none";
 
 
-/** Default basename pattern per kind; reproduces the names earlier releases wrote. */
+/** Default basename pattern per kind. */
 export const DEFAULT_PATTERNS: Readonly<Record<CommitmentLevel, string>> = {
     area: "Area - {{id}}",
     program: "Program - {{id}}",

@@ -140,7 +140,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
 
         expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
         // Areas, programs, and projects all render in the tree.
@@ -171,7 +171,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
 
         expect(document.querySelector("img")).toBeNull();
         expect(document.querySelector("b")).toBeNull();
@@ -187,7 +187,7 @@ describe("text graph presenter", () => {
         // Derive the empty graph.
         const result: GraphResult = CommitmentGraph.build([]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
 
         expect(document.querySelector(".cg-empty")?.textContent).toContain("No area");
         expect(document.querySelector(".cg-node")).toBeNull();
@@ -208,7 +208,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
 
         expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
         expect(document.querySelector("ul.commitment-graph__warnings")?.textContent).toContain(
@@ -239,7 +239,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
 
         // Require the keymap registration.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -265,7 +265,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
         const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
         const escape: (() => unknown) | undefined = modal.scope.handlers
@@ -300,7 +300,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
         const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
 
@@ -319,7 +319,7 @@ describe("text graph presenter", () => {
         const app: App = new App();
         const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.contentEl.querySelector(".cg-list")).not.toBeNull();
 
@@ -338,9 +338,9 @@ describe("text graph presenter", () => {
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
 
         // Present the graph twice in a row.
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const first: Modal = Modal.instances[0] as Modal;
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const second: Modal = Modal.instances[1] as Modal;
 
         // Require the older modal to close and the newer one to stay open.
@@ -388,7 +388,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
 
         // Require one icon per area, program, and project row.
         const labels: readonly string[] = Array.from(
@@ -409,7 +409,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project.
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the project pencil.
@@ -436,7 +436,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project under an implicit area.
         const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the implicit area plus.

@@ -141,9 +141,9 @@ describe("commitment graph commands", () => {
         expect(document.querySelector(".commitment-graph__tree-host")).toBeNull();
     });
 
-    it("presents the tree when the stored setting selects HTML", async () => {
-        // Compose the plugin over stored HTML settings.
-        const { plugin, app } = await createPlugin(undefined, { mode: "html" });
+    it("presents the tree when the stored setting selects it", async () => {
+        // Compose the plugin over stored tree settings.
+        const { plugin, app } = await createPlugin(undefined, { presentation: { mode: "tree" } });
         // Mark the workspace layout ready.
         app.workspace.triggerLayoutReady();
 
@@ -156,7 +156,7 @@ describe("commitment graph commands", () => {
 
     it("shows the stored presentation in the settings tab", async () => {
         // Compose the plugin over stored tree settings.
-        const { plugin } = await createPlugin(undefined, { mode: "html" });
+        const { plugin } = await createPlugin(undefined, { presentation: { mode: "tree" } });
         // Render the registered settings tab.
         plugin.settingTabs[0]?.display();
 
@@ -164,7 +164,7 @@ describe("commitment graph commands", () => {
         const container: HTMLElement = plugin.settingTabs[0]?.containerEl as HTMLElement;
         expect(container.textContent).toContain("Graph view");
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
-        expect(controls[0]?.value).toBe("html");
+        expect(controls[0]?.value).toBe("tree");
 
         // Drive the dropdown handler the way the settings UI does.
         controls[0]?.change?.("json");
@@ -175,7 +175,7 @@ describe("commitment graph commands", () => {
     it("renders grouped creation fields and persists one without losing the others", async () => {
         // Compose the plugin over nested creation settings.
         const { plugin } = await createPlugin(undefined, {
-            presentation: { mode: "html" },
+            presentation: { mode: "tree" },
             creation: {
                 project: { templatePath: "Templates/project.md", folderPath: "Projects" },
             },
@@ -191,7 +191,7 @@ describe("commitment graph commands", () => {
         // Require the style choice, then template, folder, and pattern per kind.
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
         expect(controls.map((setting) => setting.value)).toEqual([
-            "html",
+            "tree",
             "none",
             "",
             "",
@@ -210,7 +210,7 @@ describe("commitment graph commands", () => {
 
         // Require the complete normalized settings shape with the edited folder.
         expect(plugin.data).toEqual({
-            presentation: { mode: "html" },
+            presentation: { mode: "tree" },
             creation: {
                 idStyle: "none",
                 area: { templatePath: "", folderPath: "", pattern: "Area - {{id}}" },
@@ -229,21 +229,21 @@ describe("commitment graph commands", () => {
         const { plugin } = await createPlugin();
 
         // Persist the tree presentation through the plugin surface.
-        await plugin.saveSettings({ ...DEFAULT_SETTINGS, presentation: { mode: "html" } });
-        expect(plugin.data).toEqual({ ...DEFAULT_SETTINGS, presentation: { mode: "html" } });
+        await plugin.saveSettings({ ...DEFAULT_SETTINGS, presentation: { mode: "tree" } });
+        expect(plugin.data).toEqual({ ...DEFAULT_SETTINGS, presentation: { mode: "tree" } });
 
         // Persist JSON again and confirm the last write wins.
         await plugin.saveSettings(DEFAULT_SETTINGS);
         expect(plugin.data).toEqual(DEFAULT_SETTINGS);
     });
 
-    it("normalizes settings through saveData and keeps existing data compatible", async () => {
+    it("normalizes settings through saveData and reads them back", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin } = await createPlugin();
 
         // Persist unsafe and padded creation values.
         const next: CommitmentSettings = {
-            presentation: { mode: "html" },
+            presentation: { mode: "tree" },
             creation: {
                 idStyle: "none",
                 area: {
@@ -263,7 +263,7 @@ describe("commitment graph commands", () => {
 
         // Require the normalized shape, with the default patterns filled in.
         expect(plugin.data).toEqual({
-            presentation: { mode: "html" },
+            presentation: { mode: "tree" },
             creation: {
                 idStyle: "none",
                 area: { templatePath: "Templates/area.md", folderPath: "", pattern: "Area - {{id}}" },
@@ -276,25 +276,9 @@ describe("commitment graph commands", () => {
         expect(readCommitmentSettings(plugin.data)).toEqual(plugin.settings);
     });
 
-    it("upgrades a legacy mode and round-trips the shipped shape through saveData", async () => {
-        // Compose the plugin over legacy tree settings.
-        const { plugin } = await createPlugin(undefined, { mode: "html" });
-        expect(plugin.settings.presentation.mode).toBe("html");
-
-        // Persist the upgraded value.
-        await plugin.saveSettings(plugin.settings);
-
-        // Require the shipped nested shape with the legacy mode preserved.
-        expect(plugin.data).toEqual({
-            ...DEFAULT_SETTINGS,
-            presentation: { mode: "html" },
-        });
-        expect(readCommitmentSettings(plugin.data)).toEqual(plugin.settings);
-    });
-
     it("writes identical graph bytes in tree mode", async () => {
         // Compose the plugin over stored tree settings.
-        const { plugin, app, vault } = await createPlugin(undefined, { mode: "html" });
+        const { plugin, app, vault } = await createPlugin(undefined, { presentation: { mode: "tree" } });
         // Mark the workspace layout ready.
         app.workspace.triggerLayoutReady();
 

@@ -267,10 +267,10 @@ describe("commitment graph", () => {
         expect(result.diagnostics).toEqual([]);
     });
 
-    it("ignores legacy-looking and non-canonical documents", () => {
+    it("ignores non-canonical documents", () => {
         // Derive the graph from the canonical inputs.
         const result: GraphResult = CommitmentGraph.build([
-            input("legacy/project.md", [
+            input("reference/project.md", [
                 ["context", "Course"],
                 ["key", "CourseIS"],
                 ["type", "recipe"],
