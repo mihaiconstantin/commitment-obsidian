@@ -1,10 +1,30 @@
+# Ignore `node` and `pnpm` artifacts.
+node_modules/
+.pnpm-store/
+
+# Ignore build artifacts.
+dist/
+
+# Docs artifacts.
+cache/
+
+# VS Code.
+.vscode/
+
+# Archives.
+archive/
+
+# Ignore `AGENTS.md
+AGENTS.md
+
+# Ignore the `.agents` folder.
+.agents/
+
+# Ignore the `.scratch` folder for temporary agent files.
+.scratch/
+
 # Temporary files.
 **/temp-*
-.temp*
+
+# Miscellaneous files.
 **.DS_Store
-
-# Installed development dependencies.
-node_modules/
-
-# Staged plugin artifacts.
-dist/
