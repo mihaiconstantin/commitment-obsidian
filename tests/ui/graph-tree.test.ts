@@ -407,31 +407,6 @@ describe("graph tree", () => {
         expect(host.querySelector(".cg-stats")?.textContent).toBe("0 of 4 projects");
     });
 
-    it("clears the query and restores the full tree", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-
-        // Filter, then clear the way the modal keymap does.
-        search(host, "gamma");
-        (host.querySelector(".cg-search input") as HTMLInputElement).focus();
-        tree.clearSearch();
-
-        // Require a reset field that no longer owns focus.
-        const input: HTMLInputElement = host.querySelector(".cg-search input") as HTMLInputElement;
-        expect(input.value).toBe("");
-        expect(tree.hasSearchFocus()).toBe(false);
-        expect(document.activeElement).not.toBe(input);
-
-        // Require every row and the complete stats line.
-        expect(host.querySelector(".cg-stats")?.textContent).toBe("2 areas · 4 projects · 1 program");
-        expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(true);
-        expect(areaDetails(host, "work").hidden).toBe(false);
-        expect(areaDetails(host, "home").hidden).toBe(false);
-        expect(projectRow(host, "alpha").hidden).toBe(false);
-        expect(projectRow(host, "gamma").hidden).toBe(false);
-        expect(host.querySelector(".cg-mark")).toBeNull();
-    });
-
     it("focuses the search field through the exposed handle", () => {
         // Mount the tree.
         const { host, tree } = mount();
@@ -451,7 +426,7 @@ describe("graph tree", () => {
 
     it("preserves the native open state through a query and restores it when cleared", () => {
         // Mount the tree.
-        const { host, tree } = mount();
+        const { host } = mount();
         const work: HTMLDetailsElement = areaDetails(host, "work");
         const home: HTMLDetailsElement = areaDetails(host, "home");
         const program: HTMLDetailsElement = programDetails(host);
@@ -471,8 +446,8 @@ describe("graph tree", () => {
         expect(home.hidden).toBe(true);
         expect(home.open).toBe(false);
 
-        // Clearing the query restores the captured state.
-        tree.clearSearch();
+        // Clear the query and restore the captured state.
+        search(host, "");
         expect(work.open).toBe(false);
         expect(home.open).toBe(false);
         expect(program.open).toBe(false);

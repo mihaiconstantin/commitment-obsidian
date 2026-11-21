@@ -752,15 +752,4 @@ export class GraphTree {
         // Compare the focused element with the field.
         return document.activeElement === this.input;
     }
-
-    /** Clear the query and leave the search field. */
-    public clearSearch(): void {
-        // Reset the query.
-        this.input.value = "";
-        this.model.setQuery("");
-
-        // Leave the search field and refresh the full tree immediately.
-        this.input.blur();
-        this.applyFilter();
-    }
 }
