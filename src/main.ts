@@ -4,31 +4,20 @@
 
 import { Notice, Plugin, type App, type PluginManifest } from "obsidian";
 
-import { CommitmentGraph, type GraphResult } from "./graph/commitment-graph";
+import { CONFIG } from "./constants";
+import { GraphBuilder } from "./graph/builder";
+import type { GraphResult } from "./graph/commitment-graph";
 import { VaultGraphStore, type WriteOutcome } from "./graph/store";
 import type { CanonicalInput } from "./graph/types";
-import { describeFailure } from "./plugin-failure";
+import { describeFailure } from "./helpers/utils";
 import {
-    readCommitmentSettings,
+    SettingsReader,
     type CommitmentCreationSettings,
     type CommitmentSettings,
 } from "./settings/settings";
 import { CommitmentSettingTab } from "./settings/settings-tab";
 import { ModalGraphPresenter } from "./ui/modal-presenter";
 import type { GraphPresenter } from "./ui/presenter";
-
-
-/** Command names registered under the `Commitment` plugin name. */
-const VIEW_COMMAND: "View graph" = "View graph";
-const UPDATE_COMMAND: "Update graph" = "Update graph";
-
-
-/** Readiness message shown before the workspace has finished loading. */
-const NOT_READY_MESSAGE: "Vault is still loading; try again" = "Vault is still loading; try again";
-
-
-/** Busy message shown when one graph command is already running. */
-const BUSY_MESSAGE: "A commitment graph command is already running" = "A commitment graph command is already running";
 
 
 /** Commitment graph plugin. */
@@ -45,21 +34,11 @@ export default class CommitmentPlugin extends Plugin {
     /** Whether one graph command is already running. */
     private busy = false;
 
+    /** Reads and normalizes persisted plugin data. */
+    private readonly settingsReader: SettingsReader = new SettingsReader();
+
     /** Persisted graph presentation and container creation settings. */
-    settings: CommitmentSettings = readCommitmentSettings(null);
-
-    /** Compose the vault store and the modal presenter for one app. */
-    constructor(app: App, manifest: PluginManifest) {
-        // Initialize the Obsidian plugin base with its app and manifest.
-        super(app, manifest);
-
-        // Compose the vault store and the modal presenter once.
-        this.store = new VaultGraphStore(app.vault);
-        this.presenter = new ModalGraphPresenter(
-            app,
-            (): CommitmentCreationSettings => this.settings.creation,
-        );
-    }
+    public settings: CommitmentSettings = CONFIG.DEFAULT_SETTINGS;
 
     /** Derive and display the graph without writing a vault file. */
     private async runView(): Promise<void> {
@@ -72,7 +51,7 @@ export default class CommitmentPlugin extends Plugin {
         try {
             // Read the saved inputs and build the same graph as Update.
             const inputs: readonly CanonicalInput[] = await this.store.readInputs();
-            const result: GraphResult = CommitmentGraph.build(inputs);
+            const result: GraphResult = new GraphBuilder(inputs).build();
 
             // Display the graph and its warnings without writing.
             this.presenter.show(result, this.settings.presentation.mode);
@@ -96,7 +75,7 @@ export default class CommitmentPlugin extends Plugin {
         try {
             // Read the saved inputs and build the graph.
             const inputs: readonly CanonicalInput[] = await this.store.readInputs();
-            const result: GraphResult = CommitmentGraph.build(inputs);
+            const result: GraphResult = new GraphBuilder(inputs).build();
 
             // Create, leave unchanged, or replace the derived output.
             const outcome: WriteOutcome = await this.store.writeGraph(result.graph.toJson());
@@ -123,14 +102,14 @@ export default class CommitmentPlugin extends Plugin {
         // Reject commands before the workspace layout is ready.
         if (!this.ready) {
             // Report the readiness message.
-            new Notice(NOT_READY_MESSAGE);
+            new Notice(CONFIG.NOT_READY_MESSAGE);
             return false;
         }
 
         // Reject a command while another graph command is running.
         if (this.busy) {
             // Report the busy message.
-            new Notice(BUSY_MESSAGE);
+            new Notice(CONFIG.BUSY_MESSAGE);
             return false;
         }
 
@@ -151,10 +130,23 @@ export default class CommitmentPlugin extends Plugin {
         new Notice(describeFailure(error));
     }
 
+    /** Compose the vault store and the modal presenter for one app. */
+    public constructor(app: App, manifest: PluginManifest) {
+        // Initialize the Obsidian plugin base with its app and manifest.
+        super(app, manifest);
+
+        // Compose the vault store and the modal presenter once.
+        this.store = new VaultGraphStore(app.vault);
+        this.presenter = new ModalGraphPresenter(
+            app,
+            (): CommitmentCreationSettings => this.settings.creation,
+        );
+    }
+
     /** Persist one complete settings value after normalization. */
-    async saveSettings(next: CommitmentSettings): Promise<void> {
+    public async saveSettings(next: CommitmentSettings): Promise<void> {
         // Normalize the supplied value through the settings reader.
-        const normalized: CommitmentSettings = readCommitmentSettings(next);
+        const normalized: CommitmentSettings = this.settingsReader.read(next);
 
         // Retain the normalized settings for the next command or action.
         this.settings = normalized;
@@ -164,9 +156,9 @@ export default class CommitmentPlugin extends Plugin {
     }
 
     /** Register the two commands and defer reads until the layout is ready. */
-    async onload(): Promise<void> {
+    public override async onload(): Promise<void> {
         // Apply the stored settings before any command or tab can read them.
-        this.settings = readCommitmentSettings(await this.loadData().catch((): null => null));
+        this.settings = this.settingsReader.read(await this.loadData().catch((): null => null));
 
         // Register the settings tab for presentation and creation.
         this.addSettingTab(new CommitmentSettingTab(this.app, this));
@@ -180,7 +172,7 @@ export default class CommitmentPlugin extends Plugin {
         // Register the read-only graph command.
         this.addCommand({
             id: "view-graph",
-            name: VIEW_COMMAND,
+            name: CONFIG.VIEW_COMMAND,
             callback: (): Promise<void> => {
                 // Return the command promise so callers can observe completion.
                 return this.runView();
@@ -190,7 +182,7 @@ export default class CommitmentPlugin extends Plugin {
         // Register the graph update command.
         this.addCommand({
             id: "update-graph",
-            name: UPDATE_COMMAND,
+            name: CONFIG.UPDATE_COMMAND,
             callback: (): Promise<void> => {
                 // Return the command promise so callers can observe completion.
                 return this.runUpdate();

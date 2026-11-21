@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("./stubs/obsidian"));
 
 import { App, Notice, Setting } from "obsidian";
-import { DEFAULT_SETTINGS, readCommitmentSettings } from "../src/settings/settings";
+import { CONFIG } from "../src/constants";
+import { SettingsReader } from "../src/settings/settings";
 import type { CommitmentSettings } from "../src/settings/settings";
 import CommitmentPlugin from "../src/main";
-import { GRAPH_PATH } from "../src/graph/store";
 import { FakeVault } from "./support/fake-vault";
 
 
@@ -100,7 +100,7 @@ describe("commitment graph commands", () => {
         ]);
         expect(vault.calls.creates).toEqual([]);
         expect(vault.calls.processes).toEqual([]);
-        expect(vault.files.has(GRAPH_PATH)).toBe(false);
+        expect(vault.files.has(CONFIG.GRAPH_PATH)).toBe(false);
     });
 
     it("shows warnings separately from the JSON", async () => {
@@ -169,7 +169,7 @@ describe("commitment graph commands", () => {
         // Drive the dropdown handler the way the settings UI does.
         controls[0]?.change?.("json");
         await Promise.resolve();
-        expect(plugin.data).toEqual(DEFAULT_SETTINGS);
+        expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
     });
 
     it("renders grouped creation fields and persists one without losing the others", async () => {
@@ -229,12 +229,12 @@ describe("commitment graph commands", () => {
         const { plugin } = await createPlugin();
 
         // Persist the tree presentation through the plugin surface.
-        await plugin.saveSettings({ ...DEFAULT_SETTINGS, presentation: { mode: "tree" } });
-        expect(plugin.data).toEqual({ ...DEFAULT_SETTINGS, presentation: { mode: "tree" } });
+        await plugin.saveSettings({ ...CONFIG.DEFAULT_SETTINGS, presentation: { mode: "tree" } });
+        expect(plugin.data).toEqual({ ...CONFIG.DEFAULT_SETTINGS, presentation: { mode: "tree" } });
 
         // Persist JSON again and confirm the last write wins.
-        await plugin.saveSettings(DEFAULT_SETTINGS);
-        expect(plugin.data).toEqual(DEFAULT_SETTINGS);
+        await plugin.saveSettings(CONFIG.DEFAULT_SETTINGS);
+        expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
     });
 
     it("normalizes settings through saveData and reads them back", async () => {
@@ -273,7 +273,7 @@ describe("commitment graph commands", () => {
         });
 
         // Require the saved data to read back as the same settings.
-        expect(readCommitmentSettings(plugin.data)).toEqual(plugin.settings);
+        expect(new SettingsReader().read(plugin.data)).toEqual(plugin.settings);
     });
 
     it("writes identical graph bytes in tree mode", async () => {
@@ -286,7 +286,7 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         // Require the same projection the JSON presentation shows.
-        const written: unknown = vault.files.get(GRAPH_PATH);
+        const written: unknown = vault.files.get(CONFIG.GRAPH_PATH);
         const text: string = typeof written === "string"
             ? written
             : new TextDecoder().decode(written as Uint8Array);
@@ -336,15 +336,15 @@ describe("commitment graph commands", () => {
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
             "Commitment graph written",
         ]);
-        expect(vault.calls.creates).toEqual([GRAPH_PATH]);
-        expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toContain('"alpha"');
+        expect(vault.calls.creates).toEqual([CONFIG.GRAPH_PATH]);
+        expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toContain('"alpha"');
     });
 
     it("reports unchanged without writing identical output", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin({
             "projects/alpha.md": project("alpha"),
-            [GRAPH_PATH]:
+            [CONFIG.GRAPH_PATH]:
                 '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',
         });
         // Mark the workspace layout ready.
@@ -425,7 +425,7 @@ describe("commitment graph commands", () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin({
             "projects/alpha.md": project("alpha"),
-            [GRAPH_PATH]: '{"stale": true}\n',
+            [CONFIG.GRAPH_PATH]: '{"stale": true}\n',
         });
         // Mark the workspace layout ready.
         app.workspace.triggerLayoutReady();
@@ -436,8 +436,8 @@ describe("commitment graph commands", () => {
         expect(modalTexts()).toEqual([
             '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',
         ]);
-        expect(vault.calls.reads).not.toContain(GRAPH_PATH);
-        expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toBe('{"stale": true}\n');
+        expect(vault.calls.reads).not.toContain(CONFIG.GRAPH_PATH);
+        expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toBe('{"stale": true}\n');
         expect(vault.calls.processes).toEqual([]);
     });
 

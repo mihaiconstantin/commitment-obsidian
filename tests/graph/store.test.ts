@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
-import { VaultGraphStore, GRAPH_PATH } from "../../src/graph/store";
+import { CONFIG } from "../../src/constants";
+import { VaultGraphStore } from "../../src/graph/store";
 import type { CanonicalInput } from "../../src/graph/types";
 import { FakeVault } from "../support/fake-vault";
 
@@ -97,13 +98,13 @@ describe("vault graph store", () => {
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
         await expect(store.writeGraph("{}\n")).resolves.toBe("written");
-        expect(vault.calls.creates).toEqual([GRAPH_PATH]);
-        expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toBe("{}\n");
+        expect(vault.calls.creates).toEqual([CONFIG.GRAPH_PATH]);
+        expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toBe("{}\n");
     });
 
     it("leaves identical text untouched", async () => {
         // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: "{}\n" });
+        const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: "{}\n" });
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
@@ -114,19 +115,19 @@ describe("vault graph store", () => {
 
     it("replaces different derived output", async () => {
         // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: '{"manual": true}\n' });
+        const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: '{"manual": true}\n' });
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
         await expect(store.writeGraph("{}\n")).resolves.toBe("written");
-        expect(vault.calls.processes).toEqual([GRAPH_PATH]);
-        expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toBe("{}\n");
+        expect(vault.calls.processes).toEqual([CONFIG.GRAPH_PATH]);
+        expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toBe("{}\n");
     });
 
     it("rejects a folder at the destination", async () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault();
-        vault.createFolder(GRAPH_PATH);
+        vault.createFolder(CONFIG.GRAPH_PATH);
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
@@ -150,7 +151,7 @@ describe("vault graph store", () => {
 
     it("reports a destination read failure with the path", async () => {
         // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: "{}\n" });
+        const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: "{}\n" });
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
         // Replace the vault behavior for the case.
@@ -163,7 +164,7 @@ describe("vault graph store", () => {
 
     it("reports a process write failure with the path", async () => {
         // Create the in-memory vault.
-        const vault: FakeVault = new FakeVault({ [GRAPH_PATH]: '{"manual": true}\n' });
+        const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: '{"manual": true}\n' });
         // Compose the store over the vault.
         const store: VaultGraphStore = new VaultGraphStore(vault);
         // Replace the vault behavior for the case.

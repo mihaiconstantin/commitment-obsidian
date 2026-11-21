@@ -1,14 +1,12 @@
 /**
  * Immutable commitment graph snapshot with structured access and JSON output.
  *
- * Construction lives in `buildGraph`; this class owns only the finished
+ * Construction lives in `GraphBuilder`; this class owns only the finished
  * snapshot and the pending-support diagnosis that needs membership lookups.
  */
 
-import { createDiagnostic } from "../plugin-failure";
-import { buildGraph, type BuiltGraph } from "./builder";
+import { createDiagnostic } from "./diagnostics";
 import type {
-    CanonicalInput,
     CommitmentLevel,
     Diagnostic,
     GraphArea,
@@ -55,12 +53,12 @@ export class CommitmentGraph {
     private readonly containerPaths: Readonly<Record<CommitmentLevel, ReadonlyMap<string, string>>>;
 
     /** Construct the graph from prepared snapshots. */
-    private constructor(
+    public constructor(
         areas: readonly GraphArea[],
         members: Readonly<Record<CommitmentLevel, ReadonlySet<string>>>,
         containerPaths: Readonly<Record<CommitmentLevel, ReadonlyMap<string, string>>>,
         pendingSupports: readonly PendingSupport[],
-        diagnostics: Diagnostic[],
+        findings: Diagnostic[],
     ) {
         // Store the prepared snapshot and source index.
         this.areas = areas;
@@ -76,7 +74,7 @@ export class CommitmentGraph {
             }
 
             // Diagnose the unresolved target without inventing a node.
-            diagnostics.push(
+            findings.push(
                 createDiagnostic(
                     "unresolved_anchor",
                     `Support container '${support.path}' anchors to unknown ${support.level} identifier '${support.identifier}'; it is omitted from the commitment graph.`,
@@ -86,45 +84,26 @@ export class CommitmentGraph {
         }
     }
 
-    /** Build and validate one graph from saved canonical inputs. */
-    static build(inputs: readonly CanonicalInput[]): GraphResult {
-        // Validate and project every input into the built graph data.
-        const built: BuiltGraph = buildGraph(inputs);
-
-        // Create the immutable snapshot, which resolves the pending supports.
-        const diagnostics: Diagnostic[] = [...built.diagnostics];
-        const graph: CommitmentGraph = new CommitmentGraph(
-            built.areas,
-            built.members,
-            built.containerPaths,
-            built.pendingSupports,
-            diagnostics,
-        );
-
-        // Return the graph and diagnostics from the same build moment.
-        return { graph, diagnostics };
-    }
-
     /** Return whether a typed identifier is a member of the graph. */
-    contains(level: CommitmentLevel, identifier: string): boolean {
+    public contains(level: CommitmentLevel, identifier: string): boolean {
         // Report membership from the matching concept-level set.
         return this.members[level].has(identifier);
     }
 
     /** Return the source path of an explicit container, or null when implicit. */
-    getContainerPath(level: CommitmentLevel, identifier: string): string | null {
+    public getContainerPath(level: CommitmentLevel, identifier: string): string | null {
         // Read the indexed path for the typed identifier.
         return this.containerPaths[level].get(identifier) ?? null;
     }
 
     /** Return the sorted area snapshots. */
-    getAreas(): readonly GraphArea[] {
+    public getAreas(): readonly GraphArea[] {
         // Return the immutable area list.
         return this.areas;
     }
 
     /** Serialize the direct projection with four-space indentation. */
-    toJson(): string {
+    public toJson(): string {
         // Use a null prototype so `__proto__` remains an ordinary area key.
         const projection: Record<string, ProjectedArea> = Object.create(null);
         for (const area of this.areas) {
