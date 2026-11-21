@@ -2,13 +2,10 @@
  * Persisted plugin settings for graph presentation and container creation.
  */
 
-import {
-    DEFAULT_ID_STYLE,
-    DEFAULT_PATTERNS,
-    isIdStyle,
-    type IdStyle,
-} from "../containers/file-name";
+import { CONFIG } from "../constants";
+import { IdStyleCatalog, type IdStyle } from "../containers/file-name";
 import type { CommitmentLevel } from "../graph/types";
+import { ownValue } from "../helpers/utils";
 
 
 /** How the graph content is presented. */
@@ -61,153 +58,126 @@ export interface CommitmentSettings {
 }
 
 
-/** Empty creation settings for one kind. */
-function emptyCreation(kind: CommitmentLevel): ContainerCreationSettings {
-    // Default the pattern to the kind's default.
-    return { templatePath: "", folderPath: "", pattern: DEFAULT_PATTERNS[kind] };
-}
+/** Reads and normalizes the supported settings from persisted plugin data. */
+export class SettingsReader {
+    /** Supported identifier styles used to gate the persisted value. */
+    private readonly styles: IdStyleCatalog = new IdStyleCatalog();
 
-
-/** Settings used before the data file supplies any. */
-export const DEFAULT_SETTINGS: CommitmentSettings = {
-    presentation: { mode: "json" },
-    creation: {
-        idStyle: DEFAULT_ID_STYLE,
-        area: emptyCreation("area"),
-        program: emptyCreation("program"),
-        project: emptyCreation("project"),
-    },
-};
-
-
-/** Return whether a value is a supported presentation mode. */
-export function isPresentationMode(value: unknown): value is PresentationMode {
-    // Accept only the two supported presentations.
-    return value === "json" || value === "tree";
-}
-
-
-/** Return one own property from an unknown object. */
-function ownValue(value: unknown, key: string): unknown {
-    // Require an object before reading a property.
-    if (typeof value !== "object" || value === null) {
-        // Report no usable property.
-        return undefined;
+    /** Return whether a value is a supported presentation mode. */
+    private isPresentationMode(value: unknown): value is PresentationMode {
+        // Require exact text that names an own supported mode.
+        return typeof value === "string"
+            && Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value);
     }
 
-    // Read only own properties, never the prototype chain.
-    return Object.prototype.hasOwnProperty.call(value, key)
-        ? (value as Record<string, unknown>)[key]
-        : undefined;
-}
+    /** Return a vault-relative setting path, or empty when it is unsafe. */
+    private readVaultPath(value: unknown): string {
+        // Require exact text.
+        if (typeof value !== "string") {
+            // Treat a malformed value as unset.
+            return "";
+        }
 
+        // Trim surrounding whitespace.
+        const trimmed: string = value.trim();
 
-/** Return a vault-relative setting path, or empty when it is unsafe. */
-function readVaultPath(value: unknown): string {
-    // Require exact text.
-    if (typeof value !== "string") {
-        // Treat a malformed value as unset.
-        return "";
+        // Treat an empty value as unset.
+        if (trimmed === "") {
+            // Report no configured path.
+            return "";
+        }
+
+        // Normalize separators before inspecting or removing segments.
+        const parts: readonly string[] = trimmed.replace(/\\/g, "/").split("/");
+
+        // Reject any traversal segment.
+        if (parts.some((segment: string): boolean => segment === "..")) {
+            // Drop a path that can escape the vault.
+            return "";
+        }
+
+        // Remove current-directory segments before checking the path root.
+        const withoutDots: readonly string[] = parts.filter(
+            (segment: string): boolean => segment !== ".",
+        );
+
+        // Reject absolute, UNC, and empty paths from a leading empty segment.
+        if (withoutDots.length === 0 || withoutDots[0] === "") {
+            // Drop the rooted path.
+            return "";
+        }
+
+        // Remove empty segments inside the path.
+        const segments: readonly string[] = withoutDots.filter(
+            (segment: string): boolean => segment !== "",
+        );
+        const normalized: string = segments.join("/");
+
+        // Reject an empty result or a drive-letter path.
+        if (normalized === "" || /^[A-Za-z]:/.test(normalized)) {
+            // Drop the unusable path.
+            return "";
+        }
+
+        // Return the normalized vault-relative path.
+        return normalized;
     }
 
-    // Trim surrounding whitespace.
-    const trimmed: string = value.trim();
+    /** Read one basename pattern, falling back on a malformed or empty value. */
+    private readPattern(value: unknown, kind: CommitmentLevel): string {
+        // Require exact text with visible content.
+        if (typeof value !== "string" || value.trim() === "") {
+            // Return the kind's default pattern.
+            return CONFIG.DEFAULT_PATTERNS[kind];
+        }
 
-    // Treat an empty value as unset.
-    if (trimmed === "") {
-        // Report no configured path.
-        return "";
+        // Keep the pattern text as stored.
+        return value;
     }
 
-    // Normalize separators before inspecting or removing segments.
-    const parts: readonly string[] = trimmed.replace(/\\/g, "/").split("/");
+    /** Read one kind's creation settings, ignoring malformed values. */
+    private readCreation(value: unknown, kind: CommitmentLevel): ContainerCreationSettings {
+        // Read the template and folder paths without trusting their shape.
+        const templatePath: string = this.readVaultPath(ownValue(value, "templatePath"));
+        const folderPath: string = this.readVaultPath(ownValue(value, "folderPath"));
 
-    // Reject any traversal segment.
-    if (parts.some((segment: string): boolean => segment === "..")) {
-        // Drop a path that can escape the vault.
-        return "";
+        // Read the basename pattern, defaulting a malformed or empty value.
+        const pattern: string = this.readPattern(ownValue(value, "pattern"), kind);
+
+        // Return the normalized triple.
+        return { templatePath, folderPath, pattern };
     }
 
-    // Remove current-directory segments before checking the path root.
-    const withoutDots: readonly string[] = parts.filter(
-        (segment: string): boolean => segment !== ".",
-    );
+    /** Read the supported settings from unvalidated plugin data. */
+    public read(data: unknown): CommitmentSettings {
+        // Read the nested presentation mode without trusting its shape.
+        const nested: unknown = ownValue(ownValue(data, "presentation"), "mode");
 
-    // Reject absolute, UNC, and empty paths from a leading empty segment.
-    if (withoutDots.length === 0 || withoutDots[0] === "") {
-        // Drop the rooted path.
-        return "";
+        // Fall back on the configured default presentation mode.
+        const mode: PresentationMode = this.isPresentationMode(nested)
+            ? nested
+            : CONFIG.DEFAULT_SETTINGS.presentation.mode;
+
+        // Read each known creation kind and ignore unknown kind keys.
+        const creationSource: unknown = ownValue(data, "creation");
+
+        // Read the global style, falling back on an unknown value.
+        const storedStyle: unknown = ownValue(creationSource, "idStyle");
+        const idStyle: IdStyle = this.styles.isStyle(storedStyle)
+            ? storedStyle
+            : CONFIG.DEFAULT_ID_STYLE;
+
+        // Read each kind with its own default pattern.
+        const creation: Record<CommitmentLevel, ContainerCreationSettings> = {
+            area: this.readCreation(ownValue(creationSource, "area"), "area"),
+            program: this.readCreation(ownValue(creationSource, "program"), "program"),
+            project: this.readCreation(ownValue(creationSource, "project"), "project"),
+        };
+
+        // Return the normalized settings shape.
+        return {
+            presentation: { mode },
+            creation: { idStyle, ...creation },
+        };
     }
-
-    // Remove empty segments inside the path.
-    const segments: readonly string[] = withoutDots.filter(
-        (segment: string): boolean => segment !== "",
-    );
-    const normalized: string = segments.join("/");
-
-    // Reject an empty result or a drive-letter path.
-    if (normalized === "" || /^[A-Za-z]:/.test(normalized)) {
-        // Drop the unusable path.
-        return "";
-    }
-
-    // Return the normalized vault-relative path.
-    return normalized;
-}
-
-
-/** Read one basename pattern, falling back on a malformed or empty value. */
-function readPattern(value: unknown, kind: CommitmentLevel): string {
-    // Require exact text with visible content.
-    if (typeof value !== "string" || value.trim() === "") {
-        // Return the kind's default pattern.
-        return DEFAULT_PATTERNS[kind];
-    }
-
-    // Keep the pattern text as stored.
-    return value;
-}
-
-
-/** Read one kind's creation settings, ignoring malformed values. */
-function readCreation(value: unknown, kind: CommitmentLevel): ContainerCreationSettings {
-    // Read the template and folder paths without trusting their shape.
-    const templatePath: string = readVaultPath(ownValue(value, "templatePath"));
-    const folderPath: string = readVaultPath(ownValue(value, "folderPath"));
-
-    // Read the basename pattern, defaulting a malformed or empty value.
-    const pattern: string = readPattern(ownValue(value, "pattern"), kind);
-
-    // Return the normalized triple.
-    return { templatePath, folderPath, pattern };
-}
-
-
-/** Read the supported settings from unvalidated plugin data. */
-export function readCommitmentSettings(data: unknown): CommitmentSettings {
-    // Read the nested presentation mode without trusting its shape.
-    const nested: unknown = ownValue(ownValue(data, "presentation"), "mode");
-
-    // Fall back on JSON for an unsupported mode.
-    const mode: PresentationMode = isPresentationMode(nested) ? nested : "json";
-
-    // Read each known creation kind and ignore unknown kind keys.
-    const creationSource: unknown = ownValue(data, "creation");
-
-    // Read the global style, falling back on an unknown value.
-    const storedStyle: unknown = ownValue(creationSource, "idStyle");
-    const idStyle: IdStyle = isIdStyle(storedStyle) ? storedStyle : DEFAULT_ID_STYLE;
-
-    // Read each kind with its own default pattern.
-    const creation: Record<CommitmentLevel, ContainerCreationSettings> = {
-        area: readCreation(ownValue(creationSource, "area"), "area"),
-        program: readCreation(ownValue(creationSource, "program"), "program"),
-        project: readCreation(ownValue(creationSource, "project"), "project"),
-    };
-
-    // Return the normalized settings shape.
-    return {
-        presentation: { mode },
-        creation: { idStyle, ...creation },
-    };
 }
