@@ -213,10 +213,6 @@
     margin-left: auto;
 }
 
-.commitment-graph__tree-host .cg-line > .cg-meter + .cg-num {
-    margin-left: 0;
-}
-
 /* Size the open or create icon and mirror its title gap after it. */
 .commitment-graph__tree-host .cg-file {
     display: inline-flex;
@@ -378,6 +374,13 @@
 @media (prefers-reduced-motion: reduce) {
     .commitment-graph__tree-host * {
         transition: none !important;
+    }
+}
+
+@media (min-width: 561px) {
+    /* Keep the count beside the visible meter. */
+    .commitment-graph__tree-host .cg-line > .cg-meter + .cg-num {
+        margin-left: 0;
     }
 }
 
