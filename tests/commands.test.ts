@@ -646,4 +646,29 @@ describe("commitment graph commands", () => {
         ]);
         expect(vault.calls.creates).toEqual([]);
     });
+
+    it("reports an unreadable source for Doctor without a modal", async () => {
+        // Compose the plugin over an in-memory vault.
+        const { plugin, app, vault } = await createPlugin();
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+        // Capture the original vault method.
+        const original = vault.read.bind(vault);
+        vi.spyOn(vault, "read").mockImplementation(async (file) => {
+            if (file.path === "projects/alpha.md") {
+                throw new Error("permission denied");
+            }
+            return original(file);
+        });
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Cannot read `projects/alpha.md`, permission denied",
+        ]);
+        expect(Modal.instances).toHaveLength(0);
+        expect(vault.calls.creates).toEqual([]);
+        expect(vault.calls.processes).toEqual([]);
+    });
 });
