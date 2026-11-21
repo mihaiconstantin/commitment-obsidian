@@ -260,11 +260,15 @@
     background: var(--cg-card);
 }
 
-.commitment-graph__tree-host .cg-node {
+/* Space every fold line as a whole so its title and icon stay centered together. */
+.commitment-graph__tree-host .cg-row > summary.cg-line,
+.commitment-graph__tree-host .cg-program > summary.cg-line {
     margin-top: 3px;
 }
 
-.commitment-graph__tree-host .cg-row:first-child .cg-node {
+/* Keep the first area and its programs flush with the list. */
+.commitment-graph__tree-host .cg-row:first-child > summary.cg-line,
+.commitment-graph__tree-host .cg-row:first-child .cg-program > summary.cg-line {
     margin-top: 0;
 }
 
