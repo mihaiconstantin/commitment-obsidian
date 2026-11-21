@@ -159,7 +159,7 @@ export default class CommitmentPlugin extends Plugin {
         new Notice(describeFailure(error));
     }
 
-    /** Compose the vault store and the modal presenter for one app. */
+    /** Compose the vault store and both modal presenters for one app. */
     public constructor(app: App, manifest: PluginManifest) {
         // Initialize the Obsidian plugin base with its app and manifest.
         super(app, manifest);
