@@ -2,111 +2,90 @@
  * Interactive foldable graph tree used by the graph modal.
  *
  * The tree is the only production view; the JSON view renders the same graph
- * without rows. Rows use plain DOM, while icons use Obsidian's `setIcon` so the
- * tree follows the active theme.
+ * without rows. Areas and programs use native `details` folding, and rows use
+ * plain DOM. Icons use Obsidian's `setIcon` so the tree follows the active
+ * theme.
  */
 
-import { setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 
+import { CONFIG } from "../constants";
 import type { ContainerFileAction, ContainerFileActions } from "../containers/container-file-actions";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
-import {
-    countArea,
-    fileKey,
-    filterArea,
-    orderedAreas,
-    readSort,
-    rowIdentity,
-    writeSort,
-} from "./tree-model";
-import type { AreaView, TreeSort } from "./tree-model";
+import { TreeModel } from "./tree-model";
+import type { AreaView } from "./tree-model";
 
 
-/** Labels used by the tree chrome. */
-const SEARCH_PLACEHOLDER: "Filter areas, programs, projects" = "Filter areas, programs, projects";
+/** Project row elements kept for in-place filtering. */
+interface ProjectElements {
+    /** Row wrapper toggled by the hidden attribute. */
+    readonly row: HTMLElement;
 
+    /** Identifier text that receives match highlighting. */
+    readonly name: HTMLElement;
 
-/** Delay before filtering so large vaults stay responsive while typing. */
-const FILTER_DELAY: number = 90;
-
-
-/** Duration of one copy confirmation message. */
-const TOAST_DURATION: number = 1400;
-
-
-/** Return one detached row line. */
-function createLine(): HTMLElement {
-    // Create the line that keeps the body, icon, and count on one row.
-    const line: HTMLElement = document.createElement("div");
-    line.className = "cg-line";
-    return line;
+    /** Project identifier. */
+    readonly id: string;
 }
 
 
-/** Return the element text with the active query highlighted. */
-function markedText(text: string, query: string): HTMLElement {
-    // Create the text container with the shared name classes.
-    const span: HTMLElement = document.createElement("span");
-    span.className = "cg-nm cg-mono";
+/** Program row elements kept for in-place filtering. */
+interface ProgramElements {
+    /** Native folding element. */
+    readonly details: HTMLDetailsElement;
 
-    // Add the plain text when no query is active.
-    if (query === "") {
-        // Set the whole identifier as text.
-        span.textContent = text;
-        return span;
-    }
+    /** Program identifier text that receives match highlighting. */
+    readonly name: HTMLElement;
 
-    // Split on every case-insensitive query occurrence.
-    const pattern: RegExp = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
-    const parts: readonly string[] = text.split(pattern);
+    /** Visible project count beside the program name. */
+    readonly num: HTMLElement;
 
-    // Append each part, marking the matches.
-    for (const part of parts) {
-        // Skip an empty part produced by the split.
-        if (part === "") {
-            // Continue with the next part.
-            continue;
-        }
+    /** Program identifier. */
+    readonly id: string;
 
-        // Mark a matched part.
-        if (part.toLowerCase() === query.toLowerCase()) {
-            // Add the highlight without interpreting markup.
-            span.createEl("mark", { cls: "cg-mark", text: part });
-            continue;
-        }
+    /** Coordinated project rows. */
+    readonly projects: readonly ProjectElements[];
+}
 
-        // Add the unmatched text.
-        span.append(document.createTextNode(part));
-    }
 
-    // Return the highlighted text.
-    return span;
+/** Area row elements kept for in-place filtering. */
+interface AreaElements {
+    /** Graph area rendered by these elements. */
+    readonly area: GraphArea;
+
+    /** Native folding element. */
+    readonly details: HTMLDetailsElement;
+
+    /** Area identifier text that receives match highlighting. */
+    readonly name: HTMLElement;
+
+    /** Visible project count beside the area name. */
+    readonly num: HTMLElement;
+
+    /** Direct project rows. */
+    readonly projects: readonly ProjectElements[];
+
+    /** Program rows. */
+    readonly programs: readonly ProgramElements[];
 }
 
 
 /**
  * Interactive tree of areas, programs, and projects.
  *
- * The class owns the fold state, the active query and order, the toolbar and
- * list elements, the copy confirmation, and the single in-flight file action.
- * Row markup stays in class methods; only the line and marked-text helpers
- * live at module scope. Mount one tree per modal and call `dispose()` when it
- * closes.
+ * `TreeModel` owns the active query, order, and totals. The class owns the
+ * toolbar and list elements, the row markup, filtering, the copy notice, and
+ * the single in-flight file action. Areas and programs fold natively, so the
+ * tree builds its rows once and only hides or reorders them afterwards.
  */
 export class GraphTree {
-    /** Areas shown by this tree, in graph order. */
-    private readonly areas: readonly GraphArea[];
-
     /** File action seam, or null when the surface offers no file actions. */
     private readonly actions: ContainerFileActions | null;
 
-    /** Area identifiers whose contents are folded. */
-    private readonly foldedAreas: Set<string> = new Set<string>();
+    /** Query, order, and totals for this tree. */
+    private readonly model: TreeModel;
 
-    /** Folded program identifiers by area identifier. */
-    private readonly foldedPrograms: Map<string, Set<string>> = new Map<string, Set<string>>();
-
-    /** Title element for the modal. */
+    /** Search container with the icon, field, and shortcut hint. */
     private readonly search: HTMLElement;
 
     /** Query field that drives filtering. */
@@ -124,136 +103,28 @@ export class GraphTree {
     /** Scrolling list of rows. */
     private readonly list: HTMLElement;
 
-    /** Copy confirmation element. */
-    private readonly toast: HTMLElement;
+    /** Empty-result message toggled by filtering. */
+    private readonly empty: HTMLElement;
 
-    /** Largest area project count, used to size every meter. */
-    private readonly maxTotal: number;
+    /** Built area elements in their initial order. */
+    private readonly areaElements: AreaElements[] = [];
 
-    /** Total project count across every area. */
-    private readonly totalProjects: number;
+    /** Built area elements by identifier, used when reordering. */
+    private readonly areaIndex: Map<string, AreaElements> = new Map<string, AreaElements>();
 
-    /** Total program count across every area. */
-    private readonly totalPrograms: number;
-
-    /** Active filter query. */
-    private query: string = "";
-
-    /** Active sort order. */
-    private sort: TreeSort;
-
-    /** Pending filter render, or zero when none is scheduled. */
-    private filterTimer: number = 0;
-
-    /** Pending toast hide, or zero when none is scheduled. */
-    private toastTimer: number = 0;
+    /** Open state captured when a query starts, or null outside a query. */
+    private openSnapshot: Map<HTMLDetailsElement, boolean> | null = null;
 
     /** Whether one file action is already running. */
     private activating: boolean = false;
 
-    /** Whether the tree released its timers. */
-    private disposed: boolean = false;
-
-    /** Construct and mount one tree inside the supplied container. */
-    private constructor(container: HTMLElement, areas: readonly GraphArea[], actions: ContainerFileActions | null) {
-        // Store the data and the optional file action seam.
-        this.areas = areas;
-        this.actions = actions;
-
-        // Read the display totals once for the stats line and the meters.
-        this.totalProjects = areas.reduce(
-            (sum: number, area: GraphArea): number => sum + countArea(area),
-            0,
-        );
-        this.totalPrograms = areas.reduce(
-            (sum: number, area: GraphArea): number => sum + area.programs.length,
-            0,
-        );
-        this.maxTotal = areas.reduce(
-            (max: number, area: GraphArea): number => Math.max(max, countArea(area)),
-            0,
-        );
-
-        // Read the remembered order before building the control.
-        this.sort = readSort();
-
-        // Clear any previous content.
-        container.replaceChildren();
-
-        // Build the search field, sort choice, stats line, list, and toast.
-        this.search = container.createDiv({ cls: "cg-search" });
-        this.input = document.createElement("input");
-        this.sortSelect = document.createElement("select");
-        this.toggleAll = document.createElement("button");
-        this.stats = container.createEl("p", { cls: "cg-stats" });
-        this.list = container.createDiv({ cls: "cg-list" });
-        this.toast = container.createDiv({ cls: "cg-toast" });
-
-        // Assemble the chrome and attach it to the container.
-        this.buildChrome(container);
-
-        // Wire the controls and the file action seam.
-        this.bindControls();
-
-        // Render the initial tree.
-        this.render();
-    }
-
-    /** Create the tree in one container and return its control surface. */
-    static mount(
-        container: HTMLElement,
-        areas: readonly GraphArea[],
-        actions: ContainerFileActions | null = null,
-    ): GraphTree {
-        // Mount and return the new tree.
-        return new GraphTree(container, areas, actions);
-    }
-
-    /** Focus the search field, used by the modal keymap. */
-    focusSearch(): void {
-        // Move focus to the search field.
-        this.input.focus();
-    }
-
-    /** Report whether the search field currently has focus. */
-    hasSearchFocus(): boolean {
-        // Compare the focused element with the field.
-        return document.activeElement === this.input;
-    }
-
-    /** Clear the query and leave the search field. */
-    clearSearch(): void {
-        // Reset the query.
-        this.input.value = "";
-        this.query = "";
-
-        // Cancel a pending render and refresh immediately.
-        window.clearTimeout(this.filterTimer);
-        this.input.blur();
-        this.render();
-    }
-
-    /** Cancel the pending timers owned by this tree. */
-    dispose(): void {
-        // Stop repeated calls from rescheduling work.
-        if (this.disposed) {
-            // Report that the tree already released its timers.
-            return;
-        }
-
-        // Release both pending timers.
-        this.disposed = true;
-        window.clearTimeout(this.filterTimer);
-        window.clearTimeout(this.toastTimer);
-    }
-
-    /** Build the toolbar, stats line, list, footer gutter, and toast. */
+    /** Build the toolbar, stats line, list, and footer gutter. */
     private buildChrome(container: HTMLElement): void {
         // Build the search icon, field, and shortcut hint.
         const searchIcon: HTMLElement = this.search.createEl("span", { cls: "cg-search-icon" });
         setIcon(searchIcon, "search");
         this.input.type = "search";
-        this.input.placeholder = SEARCH_PLACEHOLDER;
+        this.input.placeholder = CONFIG.SEARCH_PLACEHOLDER;
         this.input.setAttribute("aria-label", "Filter the graph");
         this.input.autocomplete = "off";
         this.input.spellcheck = false;
@@ -271,8 +142,8 @@ export class GraphTree {
         sortName.textContent = "A–Z";
         this.sortSelect.append(sortCount, sortName);
 
-        // Apply the remembered order to the control.
-        this.sortSelect.value = this.sort;
+        // Apply the current order to the control.
+        this.sortSelect.value = this.model.getSort();
 
         // Build the single control that expands or collapses every entry.
         this.toggleAll.type = "button";
@@ -285,163 +156,81 @@ export class GraphTree {
         // Mark the stats line as a live status region.
         this.stats.setAttribute("role", "status");
 
-        // Mark the copy confirmation as a polite live region.
-        this.toast.setAttribute("role", "status");
-        this.toast.setAttribute("aria-live", "polite");
-
         // Build the footer gutter that keeps the list clear of the modal edge.
         const gutter: HTMLElement = container.createDiv({ cls: "cg-gutter" });
 
         // Assemble the tree chrome in the prototype order.
-        container.append(tools, this.stats, this.list, gutter, this.toast);
+        container.append(tools, this.stats, this.list, gutter);
     }
 
-    /** Bind the filter, sort, expand, and file action controls. */
+    /** Bind the filter, sort, and expand controls. */
     private bindControls(): void {
-        // Coalesce rapid keystrokes before re-rendering a large list.
+        // Filter as soon as the query changes.
         this.input.addEventListener("input", (): void => {
-            // Read the latest trimmed query.
-            this.query = this.input.value.trim();
-
-            // Cancel a pending render for an older query.
-            window.clearTimeout(this.filterTimer);
-
-            // Re-render once typing pauses on a large vault.
-            this.filterTimer = window.setTimeout((): void => this.render(), FILTER_DELAY);
+            // Read the latest trimmed query and apply it immediately.
+            this.model.setQuery(this.input.value.trim());
+            this.applyFilter();
         });
 
-        // Re-order when the sort changes.
+        // Re-order the existing area rows when the sort changes.
         this.sortSelect.addEventListener("change", (): void => {
-            // Read the selected order.
-            this.sort = this.sortSelect.value === "name" ? "name" : "count";
-
-            // Remember the order for the next open.
-            writeSort(this.sort);
-
-            // Re-render the list.
-            this.render();
+            // Read and remember the selected order.
+            this.model.setSort(this.sortSelect.value === "name" ? "name" : "count");
+            this.applySort();
         });
 
         // Expand everything, or collapse everything when already open.
         this.toggleAll.addEventListener("click", (): void => {
-            // Fold every area when the tree is fully open.
-            if (this.isFullyExpanded()) {
-                // Record each folded area.
-                for (const area of this.areas) {
-                    // Record the folded area.
-                    this.foldedAreas.add(area.id);
+            // Read the action that the current state offers.
+            const expanded: boolean = this.allExpanded();
+
+            // Collapse only the areas so the program state survives.
+            if (expanded) {
+                // Set every area state.
+                for (const area of this.areaElements) {
+                    // Fold the area.
+                    area.details.open = false;
                 }
             } else {
-                // Clear every folded entry.
-                this.foldedAreas.clear();
-                this.foldedPrograms.clear();
+                // Open every area and program.
+                for (const area of this.areaElements) {
+                    // Open the area.
+                    area.details.open = true;
+
+                    // Open every program state under the area.
+                    for (const program of area.programs) {
+                        // Open the program.
+                        program.details.open = true;
+                    }
+                }
             }
 
-            // Re-render the list.
-            this.render();
+            // Reflect the new state in the control.
+            this.updateToggleAll();
         });
     }
 
-    /** Report whether every area and program is expanded. */
-    private isFullyExpanded(): boolean {
-        // Report false while any area is folded.
-        if (this.foldedAreas.size > 0) {
-            // Report the folded state.
-            return false;
-        }
-
-        // Report false while any program is folded.
-        for (const folded of this.foldedPrograms.values()) {
-            // Report the folded state on the first folded program.
-            if (folded.size > 0) {
-                // Report the folded state.
-                return false;
-            }
-        }
-
-        // Report the expanded state when nothing is folded.
-        return true;
-    }
-
-    /** Report whether one program is folded. */
-    private isFolded(area: GraphArea, program: GraphProgram): boolean {
-        // Read the folded set for the area.
-        return this.foldedPrograms.get(area.id)?.has(program.id) ?? false;
-    }
-
-    /** Fold or unfold one program. */
-    private toggleProgram(area: GraphArea, program: GraphProgram): void {
-        // Read or start the folded set for the area.
-        let folded: Set<string> | undefined = this.foldedPrograms.get(area.id);
-        if (folded === undefined) {
-            // Create the folded set.
-            folded = new Set<string>();
-            this.foldedPrograms.set(area.id, folded);
-        }
-
-        // Toggle the program entry.
-        if (folded.has(program.id)) {
-            // Remove the folded entry.
-            folded.delete(program.id);
-        } else {
-            // Add the folded entry.
-            folded.add(program.id);
-        }
-    }
-
-    /** Show one short confirmation message. */
-    private showToast(message: string): void {
-        // Set the message and reveal it.
-        this.toast.textContent = message;
-        this.toast.classList.add("cg-toast--on");
-
-        // Hide the message after a short delay.
-        window.clearTimeout(this.toastTimer);
-        this.toastTimer = window.setTimeout((): void => {
-            // Hide the message.
-            this.toast.classList.remove("cg-toast--on");
-        }, TOAST_DURATION);
-    }
-
-    /** Copy one identifier, with a fallback for denied clipboard access. */
+    /** Copy one identifier through the clipboard and report the result. */
     private copyIdentifier(identifier: string): void {
-        // Prefer the asynchronous clipboard when it exists.
-        if (navigator.clipboard?.writeText !== undefined) {
-            // Copy the identifier and confirm the result.
-            void navigator.clipboard.writeText(identifier).then(
-                (): void => {
-                    // Confirm the copy.
-                    this.showToast(`Copied ${identifier}`);
-                },
-                (): void => {
-                    // Report the denied copy.
-                    this.showToast("Copy failed");
-                },
-            );
+        // Read the asynchronous clipboard when the surface exposes one.
+        const clipboard: Clipboard | undefined = navigator.clipboard;
+        if (clipboard?.writeText === undefined) {
+            // Report the unavailable clipboard.
+            new Notice("Copy failed");
             return;
         }
 
-        // Fall back to a temporary selection for restricted pages.
-        const field: HTMLTextAreaElement = document.createElement("textarea");
-        field.value = identifier;
-        field.setAttribute("readonly", "");
-        field.className = "cg-copy-field";
-        document.body.append(field);
-        field.select();
-        try {
-            // Report the copy only when the command succeeded.
-            if (document.execCommand("copy")) {
+        // Copy the identifier and report the settled result.
+        void clipboard.writeText(identifier).then(
+            (): void => {
                 // Confirm the copy.
-                this.showToast(`Copied ${identifier}`);
-            } else {
+                new Notice(`Copied ${identifier}`);
+            },
+            (): void => {
                 // Report the denied copy.
-                this.showToast("Copy failed");
-            }
-        } catch {
-            // Report the denied copy.
-            this.showToast("Copy failed");
-        }
-        field.remove();
+                new Notice("Copy failed");
+            },
+        );
     }
 
     /** Activate one row's file action once at a time. */
@@ -482,16 +271,16 @@ export class GraphTree {
         button.type = "button";
         button.className = action === "open" ? "cg-file cg-file--open" : "cg-file cg-file--create";
         button.dataset.cgAction = action;
-        button.dataset.cgKey = fileKey(identity);
         button.setAttribute("aria-label", label);
         button.title = label;
 
         // Add the pencil or plus icon.
         setIcon(button, action === "open" ? "pencil" : "plus");
 
-        // Activate the file action without triggering the row body.
+        // Activate the file action without toggling the enclosing details row.
         button.addEventListener("click", (event: MouseEvent): void => {
-            // Keep the body click behavior untouched.
+            // Cancel the native summary activation and keep the click local.
+            event.preventDefault();
             event.stopPropagation();
 
             // Run the guarded file action.
@@ -513,19 +302,19 @@ export class GraphTree {
         }
     }
 
-    /** Add one project row at the supplied depth. */
+    /** Build one project row at the supplied depth. */
     private projectRow(
         identifier: string,
         depth: number,
         area: string,
         program: string | null,
-    ): HTMLElement {
+    ): ProjectElements {
         // Create the row wrapper.
         const row: HTMLElement = document.createElement("div");
         row.className = "cg-row";
 
         // Create the line that keeps the body, icon, and count on one row.
-        const line: HTMLElement = createLine();
+        const line: HTMLElement = this.createLine();
 
         // Create the copy button.
         const leaf: HTMLButtonElement = document.createElement("button");
@@ -537,8 +326,9 @@ export class GraphTree {
         // Add the depth glyph.
         leaf.createEl("span", { cls: "cg-glyph", text: program === null ? "·" : "└" });
 
-        // Add the highlighted identifier.
-        leaf.append(markedText(identifier, this.query));
+        // Add the identifier.
+        const name: HTMLElement = this.nameElement(identifier);
+        leaf.append(name);
 
         // Copy the identifier on activation.
         leaf.addEventListener("click", (): void => {
@@ -550,7 +340,7 @@ export class GraphTree {
         line.append(leaf);
 
         // Add the file icon immediately after the title.
-        this.appendFileAction(line, rowIdentity("project", identifier, area, program));
+        this.appendFileAction(line, { kind: "project", id: identifier, area, program });
 
         // Label a project that a program coordinates after its file action.
         if (program !== null) {
@@ -558,143 +348,373 @@ export class GraphTree {
             line.createEl("span", { cls: "cg-tag", text: "in program" });
         }
 
-        // Return the completed row.
+        // Assemble the completed row.
         row.append(line);
-        return row;
+        return { row, name, id: identifier };
     }
 
-    /** Add one area row with its visible projects and programs. */
-    private areaRow(area: GraphArea, view: AreaView): HTMLElement {
-        // Open every area while searching.
-        const open: boolean = this.query !== "" || !this.foldedAreas.has(area.id);
+    /** Build one area with its direct projects and programs. */
+    private buildArea(area: GraphArea): AreaElements {
+        // Create the native folding element.
+        const details: HTMLDetailsElement = document.createElement("details");
+        details.className = "cg-row";
+        details.open = true;
+        details.dataset.cgKey = `area:${area.id}`;
 
-        // Create the row wrapper and its single flex line.
-        const row: HTMLElement = document.createElement("div");
-        row.className = "cg-row";
-        const line: HTMLElement = createLine();
+        // Refresh the expand control after a native fold.
+        details.addEventListener("toggle", (): void => this.updateToggleAll());
 
-        // Create the area toggle.
-        const node: HTMLButtonElement = document.createElement("button");
-        node.type = "button";
+        // Create the area header line and name it after the identifier.
+        const line: HTMLElement = this.createLine("summary");
+        line.setAttribute("aria-label", area.id);
+
+        // Create the area body with its chevron and identifier.
+        const node: HTMLElement = document.createElement("span");
         node.className = "cg-node";
-        node.setAttribute("aria-expanded", open ? "true" : "false");
-        node.dataset.cgKey = `area:${area.id}`;
         node.style.setProperty("--cg-indent", "0");
-
-        // Add the fold chevron.
-        const chevron: HTMLElement = node.createEl("span", { cls: "cg-chev", text: "▼" });
-
-        // Assemble the area body without the meter and count.
-        node.append(chevron, markedText(area.id, this.query));
-
-        // Add the body and file icon before the meter and count.
+        node.append(this.chevron());
+        const name: HTMLElement = this.nameElement(area.id);
+        node.append(name);
         line.append(node);
-        this.appendFileAction(line, rowIdentity("area", area.id, area.id, null));
+
+        // Add the file icon before the meter and count.
+        this.appendFileAction(line, { kind: "area", id: area.id, area: area.id, program: null });
 
         // Add the size meter.
         const meter: HTMLElement = line.createEl("span", { cls: "cg-meter" });
         const fill: HTMLElement = meter.createEl("i");
-        fill.style.width = `${this.maxTotal === 0 ? 0 : Math.round(countArea(area) / this.maxTotal * 100)}%`;
+        const maxTotal: number = this.model.getMaxTotal();
+        fill.style.width = `${maxTotal === 0 ? 0 : Math.round(this.model.countArea(area) / maxTotal * 100)}%`;
 
         // Add the visible project count.
-        line.createEl("span", { cls: "cg-num", text: String(view.total) });
-
-        // Toggle the area on activation.
-        node.addEventListener("click", (): void => {
-            // Fold an open area and unfold a folded one.
-            if (open) {
-                // Record the folded area.
-                this.foldedAreas.add(area.id);
-            } else {
-                // Clear the folded area.
-                this.foldedAreas.delete(area.id);
-            }
-
-            // Re-render the list.
-            this.render();
-        });
+        const num: HTMLElement = line.createEl("span", { cls: "cg-num", text: String(this.model.countArea(area)) });
 
         // Add the area header line.
-        row.append(line);
+        details.append(line);
 
-        // Render the area contents when it is open.
-        if (open) {
-            // Add each visible direct project.
-            for (const project of view.projects) {
-                // Add the direct project row.
-                row.append(this.projectRow(project, 1, area.id, null));
+        // Build each direct project row.
+        const projects: ProjectElements[] = [];
+        for (const project of area.projects) {
+            // Build and attach the direct project row.
+            const projectElements: ProjectElements = this.projectRow(project, 1, area.id, null);
+            projects.push(projectElements);
+            details.append(projectElements.row);
+        }
+
+        // Build each program row and its coordinated projects.
+        const programs: ProgramElements[] = [];
+        for (const program of area.programs) {
+            // Build and attach the program group.
+            const programElements: ProgramElements = this.buildProgram(area, program);
+            programs.push(programElements);
+            details.append(programElements.details);
+        }
+
+        // Return the complete area boundary.
+        const elements: AreaElements = {
+            area,
+            details,
+            name,
+            num,
+            projects,
+            programs,
+        };
+        return elements;
+    }
+
+    /** Build one native program group with its coordinated project rows. */
+    private buildProgram(area: GraphArea, program: GraphProgram): ProgramElements {
+        // Create the native folding element.
+        const details: HTMLDetailsElement = document.createElement("details");
+        details.className = "cg-program";
+        details.open = true;
+        details.dataset.cgKey = `program:${area.id}/${program.id}`;
+
+        // Refresh the expand control after a native fold.
+        details.addEventListener("toggle", (): void => this.updateToggleAll());
+
+        // Create the program header line and name it after the identifier.
+        const line: HTMLElement = this.createLine("summary");
+        line.setAttribute("aria-label", program.id);
+
+        // Create the program body with its chevron and identifier.
+        const node: HTMLElement = document.createElement("span");
+        node.className = "cg-node cg-node--program";
+        node.style.setProperty("--cg-indent", "1");
+        node.append(this.chevron());
+        const name: HTMLElement = this.nameElement(program.id);
+        node.append(name);
+        line.append(node);
+
+        // Add the file icon before the tag and count.
+        this.appendFileAction(line, { kind: "program", id: program.id, area: area.id, program: null });
+
+        // Mark the program entry.
+        line.createEl("span", { cls: "cg-tag", text: "program" });
+
+        // Add the program project count.
+        const num: HTMLElement = line.createEl("span", { cls: "cg-num", text: String(program.projects.length) });
+
+        // Add the program header line.
+        details.append(line);
+
+        // Build each coordinated project row.
+        const projects: ProjectElements[] = [];
+        for (const project of program.projects) {
+            // Build and attach the program project row.
+            const projectElements: ProjectElements = this.projectRow(project, 2, area.id, program.id);
+            projects.push(projectElements);
+            details.append(projectElements.row);
+        }
+
+        // Return the complete program boundary.
+        return {
+            details,
+            name,
+            num,
+            id: program.id,
+            projects,
+        };
+    }
+
+    /** Build every area and program once and append the empty message. */
+    private buildAreas(): void {
+        // Build the areas in the initial order.
+        for (const area of this.model.orderedAreas()) {
+            // Build and retain the area boundary.
+            const elements: AreaElements = this.buildArea(area);
+            this.areaElements.push(elements);
+            this.areaIndex.set(area.id, elements);
+            this.list.append(elements.details);
+        }
+
+        // Keep the empty message after every area.
+        this.list.append(this.empty);
+    }
+
+    /** Return every area and program details element. */
+    private details(): HTMLDetailsElement[] {
+        // Flatten every area with its programs.
+        return this.areaElements.flatMap((area) => [
+            area.details,
+            ...area.programs.map((program) => program.details),
+        ]);
+    }
+
+    /** Report whether every area and program is expanded. */
+    private allExpanded(): boolean {
+        // Report whether every details element is open.
+        return this.details().every((details) => details.open);
+    }
+
+    /** Reorder the existing area details without rebuilding them. */
+    private applySort(): void {
+        // Collect the built area elements in the selected order.
+        const ordered: HTMLDetailsElement[] = this.model.orderedAreas().flatMap((area) => {
+            // Read the built elements for the area.
+            const elements: AreaElements | undefined = this.areaIndex.get(area.id);
+            return elements === undefined ? [] : [elements.details];
+        });
+
+        // Move the existing areas and keep the empty message last.
+        this.list.append(...ordered, this.empty);
+    }
+
+    /** Capture the open state before a query forces rows open. */
+    private snapshotOpenStates(): void {
+        // Record every area and program state by its own element.
+        this.openSnapshot = new Map(this.details().map((details) => [details, details.open]));
+    }
+
+    /** Restore the open state captured before the query started. */
+    private restoreOpenStates(): void {
+        // Read the captured state.
+        const snapshot: Map<HTMLDetailsElement, boolean> | null = this.openSnapshot;
+        if (snapshot === null) {
+            // Leave the current state when no query captured one.
+            return;
+        }
+
+        // Restore every captured area and program state.
+        for (const [details, open] of snapshot) {
+            details.open = open;
+        }
+    }
+
+    /** Hide rows outside the query and refresh highlights, counts, and stats. */
+    private applyFilter(): void {
+        // Read the active query.
+        const query: string = this.model.getQuery();
+
+        // Capture the native fold state when a query starts.
+        if (query !== "") {
+            // Capture once so later keystrokes keep the original state.
+            if (this.openSnapshot === null) {
+                // Capture every area and program state.
+                this.snapshotOpenStates();
+            }
+        } else if (this.openSnapshot !== null) {
+            // Restore the state captured before the query.
+            this.restoreOpenStates();
+            this.openSnapshot = null;
+        }
+
+        // Count the visible areas and projects for the stats line.
+        let visibleAreas: number = 0;
+        let visibleProjects: number = 0;
+
+        // Update every built area in place.
+        for (const area of this.areaElements) {
+            // Read the part of the area that survives the query.
+            const view: AreaView = this.model.filterArea(area.area);
+
+            // Hide the area when nothing inside it matches.
+            area.details.hidden = !view.visible;
+
+            // Update the area highlight, visible count, and query fold state.
+            this.writeMarkedText(area.name, area.area.id, query);
+            area.num.textContent = String(view.total);
+            if (query !== "" && view.visible) {
+                // Open every visible area while filtering.
+                area.details.open = true;
             }
 
-            // Add each visible program.
+            // Count the visible area and its projects.
+            if (view.visible) {
+                visibleAreas += 1;
+                visibleProjects += view.total;
+            }
+
+            // Index the visible direct projects.
+            const direct: Set<string> = new Set<string>(view.projects);
+
+            // Hide each direct project outside the query.
+            for (const project of area.projects) {
+                // Toggle the row without rebuilding it.
+                project.row.hidden = !direct.has(project.id);
+
+                // Refresh the project highlight.
+                this.writeMarkedText(project.name, project.id, query);
+            }
+
+            // Index the visible programs and their projects.
+            const programs: Map<string, readonly string[]> = new Map<string, readonly string[]>();
             for (const program of view.programs) {
-                // Add the program header line and its coordinated projects.
-                this.appendProgram(row, area, program);
+                // Retain the visible project identifiers.
+                programs.set(program.id, program.projects);
+            }
+
+            // Update every built program in place.
+            for (const program of area.programs) {
+                // Read the visible projects for this program.
+                const kept: readonly string[] | undefined = programs.get(program.id);
+
+                // Hide the program when nothing inside it matches.
+                program.details.hidden = kept === undefined;
+
+                // Update the program highlight and visible count.
+                this.writeMarkedText(program.name, program.id, query);
+                program.num.textContent = String(kept?.length ?? 0);
+                if (query !== "" && kept !== undefined) {
+                    // Open every visible program while filtering.
+                    program.details.open = true;
+                }
+
+                // Index the visible coordinated projects.
+                const visible: Set<string> = new Set<string>(kept ?? []);
+
+                // Hide each coordinated project outside the query.
+                for (const project of program.projects) {
+                    // Toggle the row without rebuilding it.
+                    project.row.hidden = !visible.has(project.id);
+
+                    // Refresh the project highlight.
+                    this.writeMarkedText(project.name, project.id, query);
+                }
             }
         }
 
-        // Return the completed area row.
-        return row;
+        // Report an empty result instead of a blank list.
+        this.empty.textContent = `No area, program, or project matches “${query}”.`;
+        this.empty.hidden = visibleAreas > 0;
+
+        // Report the filtered or complete totals.
+        const totalProjects: number = this.model.getTotalProjects();
+        const totalPrograms: number = this.model.getTotalPrograms();
+        this.stats.textContent = query === ""
+            ? `${this.model.getAreaCount()} areas · ${totalProjects} projects · ${totalPrograms} program${totalPrograms === 1 ? "" : "s"}`
+            : `${visibleProjects} of ${totalProjects} projects`;
+
+        // Reflect the current fold state in the single control.
+        this.updateToggleAll();
     }
 
-    /** Append one program header line and its coordinated project rows. */
-    private appendProgram(row: HTMLElement, area: GraphArea, program: GraphProgram): void {
-        // Open every program while searching.
-        const programOpen: boolean = this.query !== "" || !this.isFolded(area, program);
+    /** Return one detached row line. */
+    private createLine(tag: "div" | "summary" = "div"): HTMLElement {
+        // Create the line that keeps the body, icon, and count on one row.
+        const line: HTMLElement = document.createElement(tag);
+        line.className = "cg-line";
+        return line;
+    }
 
-        // Create the program line.
-        const programLine: HTMLElement = createLine();
+    /** Return one native fold chevron. */
+    private chevron(): HTMLElement {
+        // Create the icon container used by the fold rows.
+        const icon: HTMLElement = document.createElement("span");
+        icon.className = "cg-chev";
+        setIcon(icon, "chevron-down");
+        return icon;
+    }
 
-        // Create the program toggle.
-        const programNode: HTMLButtonElement = document.createElement("button");
-        programNode.type = "button";
-        programNode.className = "cg-node cg-node--program";
-        programNode.setAttribute("aria-expanded", programOpen ? "true" : "false");
-        programNode.dataset.cgKey = `program:${area.id}/${program.id}`;
-        programNode.style.setProperty("--cg-indent", "1");
+    /** Return one plain name element for the initial tree build. */
+    private nameElement(text: string): HTMLElement {
+        // Create the text container with the shared name classes.
+        const span: HTMLElement = document.createElement("span");
+        span.className = "cg-nm cg-mono";
+        span.textContent = text;
+        return span;
+    }
 
-        // Add the program identifier.
-        const programText: HTMLElement = markedText(program.id, this.query);
+    /** Replace one existing name element with text marked for the query. */
+    private writeMarkedText(span: HTMLElement, text: string, query: string): void {
+        // Clear the previous text and highlights.
+        span.replaceChildren();
 
-        // Add the chevron before the identifier.
-        programNode.createEl("span", { cls: "cg-chev", text: "▼" });
-        programNode.append(programText);
+        // Add the plain text when no query is active.
+        if (query === "") {
+            // Set the whole identifier as text.
+            span.textContent = text;
+            return;
+        }
 
-        // Add the body and file icon before the tag and count.
-        programLine.append(programNode);
-        this.appendFileAction(programLine, rowIdentity("program", program.id, area.id, null));
+        // Split on every case-insensitive query occurrence.
+        const pattern: RegExp = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
+        const parts: readonly string[] = text.split(pattern);
 
-        // Mark the program entry.
-        programLine.createEl("span", { cls: "cg-tag", text: "program" });
-
-        // Add the program project count.
-        programLine.createEl("span", { cls: "cg-num", text: String(program.projects.length) });
-
-        // Toggle the program on activation.
-        programNode.addEventListener("click", (): void => {
-            // Fold or unfold the program.
-            this.toggleProgram(area, program);
-
-            // Re-render the list.
-            this.render();
-        });
-
-        // Add the program header line.
-        row.append(programLine);
-
-        // Render the program projects when it is open.
-        if (programOpen) {
-            // Add each coordinated project.
-            for (const project of program.projects) {
-                // Add the program project row.
-                row.append(this.projectRow(project, 2, area.id, program.id));
+        // Append each part, marking the matches.
+        for (const part of parts) {
+            // Skip an empty part produced by the split.
+            if (part === "") {
+                // Continue with the next part.
+                continue;
             }
+
+            // Mark a matched part.
+            if (part.toLowerCase() === query.toLowerCase()) {
+                // Add the highlight without interpreting markup.
+                span.createEl("mark", { cls: "cg-mark", text: part });
+                continue;
+            }
+
+            // Add the unmatched text.
+            span.append(document.createTextNode(part));
         }
     }
 
     /** Show the action that the expand control performs from the current state. */
     private updateToggleAll(): void {
         // Collapse only when everything is already open.
-        const expanded: boolean = this.isFullyExpanded();
+        const expanded: boolean = this.allExpanded();
         const label: string = expanded ? "Collapse all" : "Expand all";
 
         // Swap the icon and the accessible name to match the action.
@@ -703,68 +723,57 @@ export class GraphTree {
         this.toggleAll.title = label;
     }
 
-    /** Render every visible area, program, and project. */
-    private render(): void {
-        // Read the focused toggle so keyboard focus can be restored.
-        const focused: HTMLElement | null = this.list.contains(document.activeElement)
-            ? (document.activeElement as HTMLElement)
-            : null;
-        const focusedKey: string | null = focused?.dataset.cgKey ?? null;
+    /** Construct and mount one tree inside the supplied container. */
+    public constructor(container: HTMLElement, areas: readonly GraphArea[], actions: ContainerFileActions | null) {
+        // Store the file action seam and the tree model.
+        this.actions = actions;
+        this.model = new TreeModel(areas);
 
-        // Clear the previous list.
-        this.list.replaceChildren();
+        // Clear any previous content.
+        container.replaceChildren();
 
-        // Count the visible areas and projects for the stats line.
-        let visibleAreas: number = 0;
-        let visibleProjects: number = 0;
+        // Build the search field, sort choice, stats line, and list.
+        this.search = container.createDiv({ cls: "cg-search" });
+        this.input = document.createElement("input");
+        this.sortSelect = document.createElement("select");
+        this.toggleAll = document.createElement("button");
+        this.stats = container.createEl("p", { cls: "cg-stats" });
+        this.list = container.createDiv({ cls: "cg-list" });
+        this.empty = document.createElement("div");
+        this.empty.className = "cg-empty";
+        this.empty.hidden = true;
 
-        // Render the areas in the selected order.
-        for (const area of orderedAreas(this.areas, this.sort)) {
-            // Read the part of the area that survives the query.
-            const view: AreaView = filterArea(area, this.query);
+        // Assemble the chrome and build every row once.
+        this.buildChrome(container);
+        this.buildAreas();
 
-            // Skip an area with nothing visible.
-            if (!view.visible) {
-                // Continue with the next area.
-                continue;
-            }
+        // Wire the controls after the rows exist.
+        this.bindControls();
 
-            // Count the visible area.
-            visibleAreas += 1;
+        // Apply the initial visibility, highlights, and totals.
+        this.applyFilter();
+    }
 
-            // Add the rendered area row.
-            this.list.append(this.areaRow(area, view));
+    /** Focus the search field, used by the modal keymap. */
+    public focusSearch(): void {
+        // Move focus to the search field.
+        this.input.focus();
+    }
 
-            // Count the visible projects; a search keeps every area and program open.
-            visibleProjects += view.total;
-        }
+    /** Report whether the search field currently has focus. */
+    public hasSearchFocus(): boolean {
+        // Compare the focused element with the field.
+        return document.activeElement === this.input;
+    }
 
-        // Report an empty result instead of a blank list.
-        if (visibleAreas === 0) {
-            // Add the empty message.
-            this.list.createEl("div", {
-                cls: "cg-empty",
-                text: `No area, program, or project matches “${this.query}”.`,
-            });
-        }
+    /** Clear the query and leave the search field. */
+    public clearSearch(): void {
+        // Reset the query.
+        this.input.value = "";
+        this.model.setQuery("");
 
-        // Return focus to the same toggle after the rebuild.
-        if (focusedKey !== null) {
-            // Find the recreated control.
-            const restored: HTMLElement | null = this.list.querySelector(
-                `[data-cg-key="${CSS.escape(focusedKey)}"]`,
-            );
-
-            // Restore focus when the control still exists.
-            restored?.focus();
-        }
-
-        // Report the filtered or complete totals.
-        this.stats.textContent = this.query === ""
-            ? `${this.areas.length} areas · ${this.totalProjects} projects · ${this.totalPrograms} program${this.totalPrograms === 1 ? "" : "s"}`
-            : `${visibleProjects} of ${this.totalProjects} projects`;
-
-        // Reflect the new fold state in the single control.
-        this.updateToggleAll();
+        // Leave the search field and refresh the full tree immediately.
+        this.input.blur();
+        this.applyFilter();
     }
 }

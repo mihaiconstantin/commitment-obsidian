@@ -24,14 +24,14 @@ export class ModalGraphPresenter implements GraphPresenter {
     private modal: GraphModal | null = null;
 
     /** Construct the presenter for one app and creation settings supplier. */
-    constructor(app: App, creation: () => CommitmentCreationSettings) {
+    public constructor(app: App, creation: () => CommitmentCreationSettings) {
         // Store the app and settings supplier used for presentation.
         this.app = app;
         this.creation = creation;
     }
 
     /** Display one graph and its warnings in a modal. */
-    show(result: GraphResult, mode: PresentationMode): void {
+    public show(result: GraphResult, mode: PresentationMode): void {
         // Close the previous modal so only one presentation is open.
         this.modal?.close();
         this.modal = null;

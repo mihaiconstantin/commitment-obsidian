@@ -5,12 +5,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App, Modal, Notice } from "obsidian";
-import { CommitmentGraph } from "../../src/graph/commitment-graph";
+import { GraphBuilder } from "../../src/graph/builder";
 import type { GraphResult } from "../../src/graph/commitment-graph";
-import { DEFAULT_SETTINGS } from "../../src/settings/settings";
+import { CONFIG } from "../../src/constants";
 import { ModalGraphPresenter } from "../../src/ui/modal-presenter";
 import type { CanonicalInput } from "../../src/graph/types";
 import { FakeVault } from "../support/fake-vault";
+
+
+/** Build one graph and its diagnostics from canonical inputs. */
+function buildGraph(inputs: readonly CanonicalInput[]): GraphResult {
+    return new GraphBuilder(inputs).build();
+}
 
 
 function input(
@@ -41,9 +47,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphResult = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("meetings/missing.md", [
                 ["type", "meeting"],
@@ -74,9 +80,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "json");
 
@@ -88,10 +94,10 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         Modal.instances = [];
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphResult = buildGraph([
             input("projects/x.md", [
                 ["type", "project"],
                 ["id", "<b>bold</b>"],
@@ -115,9 +121,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with a program and a direct project.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphResult = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("projects/beta.md", [
                 ["type", "project"],
@@ -160,9 +166,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with an identifier that looks like markup.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphResult = buildGraph([
             input("projects/x.md", [
                 ["type", "project"],
                 ["id", "<img src=x>"],
@@ -183,9 +189,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the empty graph.
-        const result: GraphResult = CommitmentGraph.build([]);
+        const result: GraphResult = buildGraph([]);
 
         presenter.show(result, "tree");
 
@@ -197,9 +203,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with an unresolved support anchor.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphResult = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("meetings/missing.md", [
                 ["type", "meeting"],
@@ -229,15 +235,26 @@ describe("text graph presenter", () => {
         expect(styles).toMatch(
             /body:not\(\.is-mobile\) \.modal\.commitment-graph-modal\s*{[^}]*height:\s*88vh;/s,
         );
+        // Filtered rows stay out of the flow even when a class sets a display.
+        expect(styles).toMatch(
+            /\.commitment-graph__tree-host \[hidden\]\s*{[^}]*display:\s*none\s*!important;/s,
+        );
+        // Native area and program summaries hide the user-agent marker.
+        expect(styles).toMatch(
+            /\.commitment-graph__tree-host \.cg-row > summary,\s*\.commitment-graph__tree-host \.cg-program > summary\s*{[^}]*list-style:\s*none;/s,
+        );
+        expect(styles).toMatch(
+            /\.commitment-graph__tree-host \.cg-row > summary::-webkit-details-marker,\s*\.commitment-graph__tree-host \.cg-program > summary::-webkit-details-marker\s*{[^}]*display:\s*none;/s,
+        );
     });
 
     it("binds the slash shortcut through the modal scope", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "tree");
 
@@ -261,9 +278,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
@@ -288,7 +305,7 @@ describe("text graph presenter", () => {
         input.blur();
         expect(escape?.()).toBe(true);
 
-        // Release the tree listeners and the pending filter timer.
+        // Release the tree listeners when the modal closes.
         modal.close();
     });
 
@@ -296,9 +313,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
@@ -317,8 +334,8 @@ describe("text graph presenter", () => {
     it("releases the rendered tree when the modal closes", () => {
         // Create the stub app and present one tree.
         const app: App = new App();
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
         presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.contentEl.querySelector(".cg-list")).not.toBeNull();
@@ -333,9 +350,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Present the graph twice in a row.
         presenter.show(result, "tree");
@@ -365,9 +382,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with an explicit area and an implicit program.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphResult = buildGraph([
             input("areas/work.md", [
                 ["type", "area"],
                 ["id", "work"],
@@ -405,9 +422,9 @@ describe("text graph presenter", () => {
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph with one explicit project.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
@@ -432,9 +449,9 @@ describe("text graph presenter", () => {
         });
         const app: App = new App(vault);
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph with one explicit project under an implicit area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "tree");
         const modal: Modal = Modal.instances[0] as Modal;
@@ -455,9 +472,9 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph with one explicit project.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         presenter.show(result, "json");
 

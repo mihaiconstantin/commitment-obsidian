@@ -162,6 +162,22 @@
     display: block;
 }
 
+/* Hide the user-agent marker; the chevron communicates the fold state. */
+.commitment-graph__tree-host .cg-row > summary,
+.commitment-graph__tree-host .cg-program > summary {
+    list-style: none;
+}
+
+.commitment-graph__tree-host .cg-row > summary::-webkit-details-marker,
+.commitment-graph__tree-host .cg-program > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Keep filtered rows out of the flow even where a class sets a display. */
+.commitment-graph__tree-host [hidden] {
+    display: none !important;
+}
+
 /* Keep the body control, file icon, and counts on one unwrapped line. */
 .commitment-graph__tree-host .cg-line {
     display: flex;
@@ -255,15 +271,24 @@
 }
 
 .commitment-graph__tree-host .cg-chev {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 12px;
+    height: 12px;
     flex: none;
     color: var(--cg-muted);
-    font-size: 9px;
-    text-align: center;
     transition: transform 0.15s ease;
 }
 
-.commitment-graph__tree-host .cg-node[aria-expanded="false"] .cg-chev {
+.commitment-graph__tree-host .cg-chev svg {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
+.commitment-graph__tree-host details.cg-row:not([open]) > summary .cg-chev,
+.commitment-graph__tree-host details.cg-program:not([open]) > summary .cg-chev {
     transform: rotate(-90deg);
 }
 
@@ -363,39 +388,6 @@
     text-align: center;
     color: var(--cg-muted);
     font-size: 12px;
-}
-
-.commitment-graph__tree-host .cg-toast {
-    position: absolute;
-    left: 50%;
-    bottom: 14px;
-    transform: translate(-50%, 8px);
-    z-index: 5;
-    background: var(--cg-fg);
-    color: var(--background-primary);
-    font-size: 11.5px;
-    line-height: 1.45;
-    padding: 6px 12px;
-    border-radius: 999px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.16s ease, transform 0.16s ease;
-    white-space: nowrap;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.commitment-graph__tree-host .cg-toast--on {
-    opacity: 1;
-    transform: translate(-50%, 0);
-}
-
-/* The clipboard fallback is appended to body, so it cannot be host-scoped. */
-.cg-copy-field {
-    position: fixed;
-    opacity: 0;
-    pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
