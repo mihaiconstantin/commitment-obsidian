@@ -17,6 +17,20 @@ export function titleCase(id: string): string {
 }
 
 
+/** Return whether a value is a non-empty exact identifier string. */
+export function isValidIdentifier(value: unknown): value is string {
+    // Reject non-text, empty, and padded values without normalizing.
+    return typeof value === "string" && value !== "" && value === value.trim();
+}
+
+
+/** Return one count with its singular or plural noun. */
+export function countLabel(count: number, singular: string): string {
+    // Append the regular plural suffix unless the count is one.
+    return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+
 /** Compare text by UTF-16 code unit order. */
 export function compareText(left: string, right: string): number {
     // Return the first differing order, or equality for identical text.

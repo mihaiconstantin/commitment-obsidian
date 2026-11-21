@@ -12,6 +12,7 @@ import { Notice, setIcon } from "obsidian";
 import { CONFIG } from "../constants";
 import type { ContainerFileAction, ContainerFileActions } from "../containers/container-file-actions";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
+import { countLabel } from "../helpers/strings";
 import type { AppearanceSettings, GraphSort } from "../settings/settings";
 import { TreeModel } from "./tree-model";
 import type { AreaView } from "./tree-model";
@@ -599,8 +600,8 @@ export class GraphTree {
         const totalProjects: number = this.model.getTotalProjects();
         const totalPrograms: number = this.model.getTotalPrograms();
         this.stats.textContent = query === ""
-            ? `${this.model.getAreaCount()} areas · ${totalProjects} projects · ${totalPrograms} program${totalPrograms === 1 ? "" : "s"}`
-            : `${visibleProjects} of ${totalProjects} projects`;
+            ? `${countLabel(this.model.getAreaCount(), "area")} · ${countLabel(totalProjects, "project")} · ${countLabel(totalPrograms, "program")}`
+            : `${visibleProjects} of ${countLabel(totalProjects, "project")}`;
 
         // Reflect the current fold state in the single control.
         this.updateToggleAll();

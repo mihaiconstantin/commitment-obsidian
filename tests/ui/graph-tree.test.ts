@@ -149,6 +149,22 @@ describe("graph tree", () => {
         expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(true);
     });
 
+    it("uses singular count labels for a one-area graph", () => {
+        // Mount a graph with one area and one direct project.
+        const { host } = mount([
+            { id: "work", projects: ["alpha"], programs: [] },
+        ]);
+
+        // Require singular area and project labels.
+        expect(host.querySelector(".cg-stats")?.textContent).toBe(
+            "1 area · 1 project · 0 programs",
+        );
+
+        // Require the filtered total to use the singular project label.
+        search(host, "alpha");
+        expect(host.querySelector(".cg-stats")?.textContent).toBe("1 of 1 project");
+    });
+
     it("starts with every area and program expanded in count order", () => {
         // Mount the tree.
         const { host } = mount();
