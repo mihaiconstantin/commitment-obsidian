@@ -86,7 +86,7 @@ export const CONFIG = {
     UPDATE_COMMAND: "Update graph",
 
     /** Readiness message shown before the workspace has finished loading. */
-    NOT_READY_MESSAGE: "Vault is still loading; try again",
+    NOT_READY_MESSAGE: "Vault is still loading",
 
     /** Busy message shown when one graph command is already running. */
     BUSY_MESSAGE: "A commitment graph command is already running",
@@ -95,7 +95,7 @@ export const CONFIG = {
     TITLE: "Commitment Graph",
 
     /** Labels used by the tree chrome. */
-    SEARCH_PLACEHOLDER: "Filter areas, programs, projects",
+    SEARCH_PLACEHOLDER: "Filter areas, programs, and projects",
 
     /** Style used when the data file stores none. */
     DEFAULT_ID_STYLE: defaultIdStyle,
