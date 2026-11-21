@@ -41,13 +41,13 @@ export class VaultContainerFileActions implements ContainerFileActions {
         const entry: TAbstractFile | null = this.app.vault.getAbstractFileByPath(path);
         if (entry === null) {
             // Report the vanished indexed container.
-            throw new Error(`Indexed container file '${path}' no longer exists.`);
+            throw new Error(`Indexed file \`${path}\` is missing.`);
         }
 
         // Require the indexed path to still be an ordinary file.
         if (!(entry instanceof TFile)) {
             // Report the unsupported indexed shape.
-            throw new Error(`Indexed container path '${path}' is not a file.`);
+            throw new Error(`Indexed path \`${path}\` is not a file.`);
         }
 
         // Open the indexed file in the main workspace.
@@ -87,8 +87,8 @@ export class VaultContainerFileActions implements ContainerFileActions {
     private composeMessage(target: string, templatePath: string, reason: string): string {
         // Name the template only when one is configured.
         return templatePath === ""
-            ? `Could not compose '${target}': ${reason}.`
-            : `Could not compose '${target}' from template '${templatePath}': ${reason}.`;
+            ? `Cannot compose \`${target}\`, ${reason}.`
+            : `Cannot compose \`${target}\` from \`${templatePath}\`, ${reason}.`;
     }
 
     /** Read one configured template file. */
@@ -97,13 +97,13 @@ export class VaultContainerFileActions implements ContainerFileActions {
         const entry: TAbstractFile | null = this.app.vault.getAbstractFileByPath(path);
         if (entry === null) {
             // Report the missing template with its path.
-            throw new Error(`Template file '${path}' does not exist.`);
+            throw new Error(`Template \`${path}\` is missing.`);
         }
 
         // Require the template path to point at an ordinary file.
         if (!(entry instanceof TFile)) {
             // Report the unsupported template shape.
-            throw new Error(`Template path '${path}' is not a file.`);
+            throw new Error(`Template \`${path}\` is not a file.`);
         }
 
         // Read the template text.
@@ -112,7 +112,7 @@ export class VaultContainerFileActions implements ContainerFileActions {
             return await this.app.vault.read(entry);
         } catch (error) {
             // Report the unreadable template with its path.
-            throw new Error(`Could not read template '${path}': ${describeFailure(error)}`);
+            throw new Error(`Cannot read template \`${path}\`, ${describeFailure(error)}`);
         }
     }
 
@@ -138,7 +138,7 @@ export class VaultContainerFileActions implements ContainerFileActions {
             if (entry !== null) {
                 // Report the occupied parent path.
                 throw new Error(
-                    `Cannot create '${target}': parent path '${current}' is not a folder.`,
+                    `Cannot create \`${target}\`, \`${current}\` is not a folder.`,
                 );
             }
 
@@ -149,7 +149,7 @@ export class VaultContainerFileActions implements ContainerFileActions {
             } catch (error) {
                 // Report the folder creation failure with its path.
                 throw new Error(
-                    `Could not create folder '${current}': ${describeFailure(error)}`,
+                    `Cannot create folder \`${current}\`, ${describeFailure(error)}`,
                 );
             }
         }
@@ -193,26 +193,17 @@ export class VaultContainerFileActions implements ContainerFileActions {
         // Read the kind's creation settings at activation time.
         const settings: ContainerCreationSettings = this.settingsFor(identity.kind);
 
-        // Derive the target path, reporting an unusable identifier.
-        let target: string;
-        try {
-            // Derive the configured target path.
-            target = new ContainerPathBuilder(
-                settings.folderPath,
-                settings.pattern,
-                this.styleFor(),
-            ).path(identity);
-        } catch (error) {
-            // Report the path-naming failure with the affected kind and identifier.
-            throw new Error(
-                `Cannot name the ${identity.kind} file for '${identity.id}': ${describeFailure(error)}`,
-            );
-        }
+        // Derive the configured target path.
+        const target: string = new ContainerPathBuilder(
+            settings.folderPath,
+            settings.pattern,
+            this.styleFor(),
+        ).path(identity);
 
         // Reject any file or folder that already occupies the target.
         if (this.app.vault.getAbstractFileByPath(target) !== null) {
             // Report the occupied target without writing.
-            throw new Error(`Cannot create '${target}': the path is already occupied.`);
+            throw new Error(`Cannot create \`${target}\`. Path exists.`);
         }
 
         // Read and compose the template before any folder or file write.
@@ -228,7 +219,7 @@ export class VaultContainerFileActions implements ContainerFileActions {
             file = await this.app.vault.create(target, text);
         } catch (error) {
             // Report the creation failure with its target path.
-            throw new Error(`Could not create '${target}': ${describeFailure(error)}`);
+            throw new Error(`Cannot create \`${target}\`, ${describeFailure(error)}`);
         }
 
         // Open the created file in the main workspace.

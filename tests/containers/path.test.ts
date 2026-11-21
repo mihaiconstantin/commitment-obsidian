@@ -149,10 +149,10 @@ describe("container path", () => {
         expect(fileNameWith(project("alpha"), "   ", "none")).toBe("Project - alpha.md");
     });
 
-    it("rejects a pattern that renders no usable name", () => {
+    it("rejects a pattern that cannot produce a file name", () => {
         // Require the existing error when the rendered basename is empty.
         expect(() => fileNameWith(project("alpha"), "...", "none")).toThrowError(
-            /no usable file name/,
+            /cannot produce a file name/,
         );
     });
 
@@ -170,7 +170,7 @@ describe("container path", () => {
         expect(sanitize("   ")).toBe("");
 
         // Require the path derivation to reject the empty name.
-        expect(() => fileName(project("..."))).toThrowError(/no usable file name/);
-        expect(() => pathWith(project("..."), "Projects")).toThrowError(/no usable file name/);
+        expect(() => fileName(project("..."))).toThrowError(/cannot produce a file name/);
+        expect(() => pathWith(project("..."), "Projects")).toThrowError(/cannot produce a file name/);
     });
 });

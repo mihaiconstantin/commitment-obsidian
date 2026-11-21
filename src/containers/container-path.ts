@@ -65,10 +65,12 @@ export class ContainerPathBuilder {
 
     /** Return the target file name for one container identity. */
     public fileName(identity: ContainerIdentity): string {
-        // Reject an identifier with no usable file name text.
+        // Reject an identifier that cannot produce a file name.
         if (this.sanitize(identity.id) === "") {
             // Report the unusable identifier.
-            throw new Error(`Container identifier '${identity.id}' has no usable file name.`);
+            throw new Error(
+                `${CONFIG.KIND_LABELS[identity.kind]} \`${identity.id}\` cannot produce a file name.`,
+            );
         }
 
         // Choose the configured pattern, falling back to the kind's default when blank.
@@ -86,10 +88,12 @@ export class ContainerPathBuilder {
         // Sanitize the rendered basename so a pattern cannot inject a separator.
         const name: string = this.sanitize(rendered);
 
-        // Reject a pattern that renders no usable name.
+        // Reject a pattern that cannot produce a file name.
         if (name === "") {
             // Report the unusable pattern.
-            throw new Error(`Container pattern '${this.pattern}' has no usable file name.`);
+            throw new Error(
+                `${CONFIG.KIND_LABELS[identity.kind]} pattern \`${this.pattern}\` cannot produce a file name.`,
+            );
         }
 
         // Append the markdown extension to the rendered basename.

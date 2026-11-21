@@ -38,19 +38,19 @@ export class ContainerDocumentComposer {
         // Reject a kind outside the three supported container levels.
         if (identity.kind !== "area" && identity.kind !== "program" && identity.kind !== "project") {
             // Report the invalid identity type.
-            throw new Error(`invalid 'type' value '${String(identity.kind)}'`);
+            throw new Error(`invalid value \`${String(identity.kind)}\` for \`type\``);
         }
 
         // Reject an absent, empty, or padded identifier.
         if (!this.isValidIdentifier(identity.id)) {
             // Report the invalid identifier.
-            throw new Error(`invalid 'id' value '${String(identity.id)}'`);
+            throw new Error(`invalid value \`${String(identity.id)}\` for \`id\``);
         }
 
         // Reject an absent, empty, or padded owning area.
         if (!this.isValidIdentifier(identity.area)) {
             // Report the invalid owning area.
-            throw new Error(`invalid 'area' value '${String(identity.area)}'`);
+            throw new Error(`invalid value \`${String(identity.area)}\` for \`area\``);
         }
 
         // Reject an invalid project program when the row declares one.
@@ -60,7 +60,7 @@ export class ContainerDocumentComposer {
             && !this.isValidIdentifier(identity.program)
         ) {
             // Report the invalid enclosing program.
-            throw new Error(`invalid 'program' value '${String(identity.program)}'`);
+            throw new Error(`invalid value \`${String(identity.program)}\` for \`program\``);
         }
     }
 
@@ -105,7 +105,7 @@ export class ContainerDocumentComposer {
         // Reject an opening delimiter that has no closing delimiter.
         if (match === null) {
             // Report the unterminated block.
-            throw new Error("unterminated frontmatter block");
+            throw new Error("unterminated frontmatter");
         }
 
         // Return the YAML block and the remaining body text.
@@ -135,7 +135,7 @@ export class ContainerDocumentComposer {
         // Require a mapping root or an empty document.
         if (document.contents !== null && !isMap(document.contents)) {
             // Report the unsupported root shape.
-            throw new Error("frontmatter must be a mapping");
+            throw new Error("frontmatter is not a mapping");
         }
 
         // Return the parsed document for the identity override.
@@ -163,7 +163,7 @@ export class ContainerDocumentComposer {
         }
 
         // Report the invalid program before anything is written.
-        throw new Error(`invalid 'program' value '${String(program)}'`);
+        throw new Error(`invalid value \`${String(program)}\` for \`program\``);
     }
 
     /** Apply the plugin-owned identity fields to one parsed document. */

@@ -50,7 +50,7 @@ export class FrontmatterParser {
             // Report the path-scoped conversion failure.
             throw this.failure(
                 path,
-                error instanceof Error ? error.message : "frontmatter conversion failed",
+                error instanceof Error ? error.message : "conversion failed",
             );
         }
 
@@ -63,7 +63,7 @@ export class FrontmatterParser {
         // Reject a document root that is not a mapping.
         if (!(values instanceof Map)) {
             // Report the unsupported root shape.
-            throw this.failure(path, "frontmatter must be a mapping");
+            throw this.failure(path, "not a mapping");
         }
 
         // Retain text keys only; other key shapes cannot name canonical fields.
@@ -86,7 +86,7 @@ export class FrontmatterParser {
     /** Build one path-scoped parse failure. */
     private failure(path: string, reason: string): Error {
         // Render a readable message that names the source path.
-        const message: string = `Could not parse frontmatter in '${path}': ${reason}`;
+        const message: string = `Cannot parse frontmatter \`${path}\`, ${reason}`;
 
         // Return the path-scoped parse failure.
         return new Error(message);
@@ -102,7 +102,7 @@ export class FrontmatterParser {
             // Reject an opening delimiter that Obsidian did not recognize as closed.
             if (this.hasOpeningDelimiter(text)) {
                 // Report the unterminated block with its source path.
-                throw this.failure(path, "unterminated frontmatter block");
+                throw this.failure(path, "unterminated block");
             }
 
             // Return the empty mapping.

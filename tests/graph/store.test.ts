@@ -87,7 +87,7 @@ describe("vault graph store", () => {
         vi.spyOn(vault, "read").mockRejectedValueOnce(new Error("disk failure"));
 
         await expect(store.readInputs()).rejects.toThrowError(
-            /Could not read 'broken\.md': disk failure/,
+            /Cannot read `broken\.md`, disk failure/,
         );
     });
 
@@ -132,7 +132,7 @@ describe("vault graph store", () => {
         const store: VaultGraphStore = new VaultGraphStore(vault);
 
         await expect(store.writeGraph("{}\n")).rejects.toThrowError(
-            /Graph destination 'commitment-graph\.json' is a folder/,
+            /`commitment-graph\.json` is a folder/,
         );
     });
 
@@ -145,7 +145,7 @@ describe("vault graph store", () => {
         vi.spyOn(vault, "create").mockRejectedValueOnce(new Error("disk full"));
 
         await expect(store.writeGraph("{}\n")).rejects.toThrowError(
-            /Could not create graph destination 'commitment-graph\.json': disk full/,
+            /Cannot create `commitment-graph\.json`, disk full/,
         );
     });
 
@@ -158,7 +158,7 @@ describe("vault graph store", () => {
         vi.spyOn(vault, "read").mockRejectedValueOnce(new Error("locked"));
 
         await expect(store.writeGraph("{}\n")).rejects.toThrowError(
-            /Could not read graph destination 'commitment-graph\.json': locked/,
+            /Cannot read `commitment-graph\.json`, locked/,
         );
     });
 
@@ -171,7 +171,7 @@ describe("vault graph store", () => {
         vi.spyOn(vault, "process").mockRejectedValueOnce(new Error("read only"));
 
         await expect(store.writeGraph("{}\n")).rejects.toThrowError(
-            /Could not write graph destination 'commitment-graph\.json': read only/,
+            /Cannot write `commitment-graph\.json`, read only/,
         );
     });
 });

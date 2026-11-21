@@ -402,7 +402,7 @@ describe("commitment graph commands", () => {
 
         expect(modalTexts()).toEqual([]);
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Canonical project container 'projects/alpha.md' is missing required field 'id'.",
+            "Project `projects/alpha.md` is missing `id`.",
         ]);
     });
 
@@ -428,7 +428,7 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Commitment graph written",
+            "Graph written",
         ]);
         expect(vault.calls.creates).toEqual([CONFIG.GRAPH_PATH]);
         expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toContain('"alpha"');
@@ -448,7 +448,7 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Commitment graph unchanged",
+            "Graph unchanged",
         ]);
         expect(vault.calls.processes).toEqual([]);
     });
@@ -476,7 +476,7 @@ describe("commitment graph commands", () => {
         await Promise.all([first, second]);
 
         expect(Notice.instances.map((notice) => notice.message)).toContain(
-            "A commitment graph command is already running",
+            "Graph command already running",
         );
     });
 
@@ -494,10 +494,10 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toContain(
-            "Commitment graph written",
+            "Graph written",
         );
         expect(document.body.textContent).toContain("Warnings");
-        expect(document.body.textContent).toContain("Program identifier 'phd'");
+        expect(document.body.textContent).toContain("Program `phd`");
     });
 
     it("does not write markdown during update", async () => {
@@ -553,7 +553,7 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Could not read 'projects/alpha.md': permission denied",
+            "Cannot read `projects/alpha.md`, permission denied",
         ]);
         expect(vault.calls.creates).toEqual([]);
     });

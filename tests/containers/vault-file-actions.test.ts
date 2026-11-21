@@ -276,7 +276,7 @@ describe("vault container file actions", () => {
 
         // Require the vanished path and no write.
         expect(message).toContain("projects/alpha.md");
-        expect(message).toContain("no longer exists");
+        expect(message).toContain("is missing");
         expect(vault.calls.creates).toEqual([]);
         expect(app.workspace.opened).toEqual([]);
     });
@@ -376,7 +376,7 @@ describe("vault container file actions", () => {
 
         // Require the composed target and the invalid identity reason.
         expect(message).toContain("Project - alpha.md");
-        expect(message).toContain("invalid 'id'");
+        expect(message).toContain("for `id`");
         expect(vault.calls.creates).toEqual([]);
         expect(vault.calls.createFolders).toEqual([]);
     });
@@ -395,7 +395,7 @@ describe("vault container file actions", () => {
         );
 
         // Require the path-naming failure without a write.
-        expect(message).toContain("no usable file name");
+        expect(message).toContain("cannot produce a file name");
         expect(vault.calls.creates).toEqual([]);
     });
 });

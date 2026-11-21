@@ -273,21 +273,21 @@ describe("container document", () => {
         // Require a padded identifier to abort before template parsing.
         expect(() =>
             composer.compose("---\n- one\n- two\n---\n", identity("project", "alpha "), format),
-        ).toThrowError(/invalid 'id'/);
+        ).toThrowError(/invalid value .* for `id`/);
 
         // Require a padded owning area to abort.
         expect(() => composer.compose("", identity("project", "alpha", "work "), format))
-            .toThrowError(/invalid 'area'/);
+            .toThrowError(/invalid value .* for `area`/);
 
         // Require an unsupported kind to abort.
         // @ts-expect-error The runtime guard rejects a kind outside the container types.
         expect(() => composer.compose("", identity("note", "alpha"), format))
-            .toThrowError(/invalid 'type'/);
+            .toThrowError(/invalid value .* for `type`/);
 
         // Require a padded project program to abort.
         expect(() =>
             composer.compose("", identity("project", "alpha", "work", "phd "), format),
-        ).toThrowError(/invalid 'program'/);
+        ).toThrowError(/invalid value .* for `program`/);
     });
 
     it("rejects a program injected through a merge key", () => {
@@ -298,7 +298,7 @@ describe("container document", () => {
                 identity("project", "alpha"),
                 format,
             ),
-        ).toThrowError(/invalid 'program'/);
+        ).toThrowError(/invalid value .* for `program`/);
     });
 
     it("rejects an unresolvable merge source for any container kind", () => {

@@ -82,7 +82,7 @@ export default class CommitmentPlugin extends Plugin {
             const outcome: WriteOutcome = await this.store.writeGraph(result.graph.toJson());
 
             // Report the concise update outcome.
-            new Notice(`Commitment graph ${outcome}`);
+            new Notice(`Graph ${outcome}`);
 
             // Present the graph when the build reported nonblocking warnings.
             if (result.diagnostics.length > 0) {

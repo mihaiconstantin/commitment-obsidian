@@ -33,28 +33,28 @@ describe("frontmatter parser", () => {
     it("rejects an unterminated frontmatter block", () => {
         // Require the documented failure.
         expect(() => parser.parse("bad.md", "---\ntitle: Missing\n")).toThrowError(
-            /Could not parse frontmatter in 'bad.md': unterminated frontmatter block/,
+            /Cannot parse frontmatter `bad.md`, unterminated block/,
         );
     });
 
     it("rejects malformed YAML with its source path", () => {
         // Require the documented failure.
         expect(() => parser.parse("bad.md", "---\nkey: [\n---\n")).toThrowError(
-            /Could not parse frontmatter in 'bad\.md'/,
+            /Cannot parse frontmatter `bad\.md`/,
         );
     });
 
-    it("rejects duplicate canonical keys", () => {
+    it("rejects duplicate keys", () => {
         // Require the documented failure.
         expect(() =>
             parser.parse("bad.md", "---\ntype: project\ntype: area\n---\n"),
-        ).toThrowError(/Could not parse frontmatter in 'bad\.md'/);
+        ).toThrowError(/Cannot parse frontmatter `bad\.md`/);
     });
 
     it("rejects a non-mapping root", () => {
         // Require the documented failure.
         expect(() => parser.parse("bad.md", "---\n- item\n---\n")).toThrowError(
-            /frontmatter must be a mapping/,
+            /not a mapping/,
         );
     });
 
@@ -112,7 +112,7 @@ describe("frontmatter parser", () => {
         // Require the documented failure.
         expect(() =>
             parser.parse("alias.md", "---\nbase: *missing\n---\n"),
-        ).toThrowError(/Could not parse frontmatter in 'alias\.md': Unresolved alias/);
+        ).toThrowError(/Cannot parse frontmatter `alias\.md`, Unresolved alias/);
     });
 
     it("allows a cyclic alias on an unrelated field", () => {

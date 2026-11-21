@@ -89,7 +89,7 @@ export const CONFIG = {
     NOT_READY_MESSAGE: "Vault is still loading",
 
     /** Busy message shown when one graph command is already running. */
-    BUSY_MESSAGE: "A commitment graph command is already running",
+    BUSY_MESSAGE: "Graph command already running",
 
     /** Readable modal title. */
     TITLE: "Commitment Graph",

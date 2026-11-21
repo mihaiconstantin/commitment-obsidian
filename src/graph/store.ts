@@ -44,7 +44,7 @@ export class VaultGraphStore {
             return await this.vault.read(file);
         } catch (error) {
             // Report the unreadable source with its path.
-            throw new Error(`Could not read '${file.path}': ${describeFailure(error)}`);
+            throw new Error(`Cannot read \`${file.path}\`, ${describeFailure(error)}`);
         }
     }
 
@@ -106,7 +106,7 @@ export class VaultGraphStore {
         const detail: string = describeFailure(error);
 
         // Return the failure naming the destination and action.
-        return new Error(`Could not ${action} graph destination '${CONFIG.GRAPH_PATH}': ${detail}`);
+        return new Error(`Cannot ${action} \`${CONFIG.GRAPH_PATH}\`, ${detail}`);
     }
 
     /** Construct the store for one vault. */
@@ -145,7 +145,7 @@ export class VaultGraphStore {
         // Reject a folder that occupies the destination path.
         if (entry instanceof TFolder) {
             // Report the unsupported destination shape.
-            throw new Error(`Graph destination '${CONFIG.GRAPH_PATH}' is a folder.`);
+            throw new Error(`\`${CONFIG.GRAPH_PATH}\` is a folder.`);
         }
 
         // Create the destination when it is absent.
@@ -165,7 +165,7 @@ export class VaultGraphStore {
         // Require the existing destination to be an ordinary file.
         if (!(entry instanceof TFile)) {
             // Report the unsupported destination shape.
-            throw new Error(`Graph destination '${CONFIG.GRAPH_PATH}' is not a file.`);
+            throw new Error(`\`${CONFIG.GRAPH_PATH}\` is not a file.`);
         }
 
         // Read the current destination text.
