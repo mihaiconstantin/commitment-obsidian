@@ -290,6 +290,56 @@ export class TextComponent {
 }
 
 
+/** Color control used by the settings stub. */
+export class ColorComponent {
+    /** Current control value. */
+    value = "";
+
+    /** Registered change handler. */
+    change: ((value: string) => void) | null = null;
+
+    /** Set the current value without firing the handler. */
+    setValue(value: string): ColorComponent {
+        // Store the color value.
+        this.value = value;
+        return this;
+    }
+
+    /** Register the change handler. */
+    onChange(handler: (value: string) => void): ColorComponent {
+        // Store the handler for the setting stub.
+        this.change = handler;
+        return this;
+    }
+}
+
+
+/** Extra button used by the settings stub. */
+export class ExtraButtonComponent {
+    /** Registered click handler. */
+    click: (() => void) | null = null;
+
+    /** Set the button icon. */
+    setIcon(_icon: string): ExtraButtonComponent {
+        // Keep the same button.
+        return this;
+    }
+
+    /** Set the button tooltip. */
+    setTooltip(_tooltip: string): ExtraButtonComponent {
+        // Keep the same button.
+        return this;
+    }
+
+    /** Register the click handler. */
+    onClick(handler: () => void): ExtraButtonComponent {
+        // Store the handler for the setting stub.
+        this.click = handler;
+        return this;
+    }
+}
+
+
 export class Setting {
     static instances: Setting[] = [];
 
@@ -299,6 +349,8 @@ export class Setting {
     controlEl: HTMLElement;
     value = "";
     change: ((value: string) => void) | null = null;
+    color: ColorComponent | null = null;
+    reset: (() => void) | null = null;
     heading = false;
 
     constructor(containerEl: HTMLElement) {
@@ -354,6 +406,30 @@ export class Setting {
                 this.value = value;
                 handler(value);
             };
+        return this;
+    }
+
+    addColorPicker(build: (color: ColorComponent) => void): this {
+        // Build the color control and retain its value and handler.
+        const control: ColorComponent = new ColorComponent();
+        build(control);
+        this.color = control;
+        this.value = control.value;
+        const handler: ((value: string) => void) | null = control.change;
+        this.change = handler === null
+            ? null
+            : (value: string): void => {
+                this.value = value;
+                handler(value);
+            };
+        return this;
+    }
+
+    addExtraButton(build: (button: ExtraButtonComponent) => void): this {
+        // Build the extra button and retain its click handler.
+        const button: ExtraButtonComponent = new ExtraButtonComponent();
+        build(button);
+        this.reset = button.click;
         return this;
     }
 }

@@ -55,10 +55,27 @@ export interface PresentationSettings {
 }
 
 
+/** Commitment levels with an editable accent color. */
+export type AccentLevel = "area" | "program";
+
+
+/** Accent colors for the two commitment levels that carry one. */
+export interface AppearanceSettings {
+    /** Area accent. */
+    readonly area: string;
+
+    /** Program accent. */
+    readonly program: string;
+}
+
+
 /** Settings stored in the plugin data file. */
 export interface CommitmentSettings {
     /** Graph presentation settings. */
     readonly presentation: PresentationSettings;
+
+    /** Graph appearance settings. */
+    readonly appearance: AppearanceSettings;
 
     /** Container creation settings. */
     readonly creation: CommitmentCreationSettings;
@@ -137,6 +154,36 @@ export class SettingsReader {
         return normalized;
     }
 
+    /** Read one accent color, falling back on a malformed or absent value. */
+    private readColor(value: unknown, fallback: string): string {
+        // Require exact text.
+        if (typeof value !== "string") {
+            // Use the shipped default.
+            return fallback;
+        }
+
+        // Normalize the color for comparison and storage.
+        const color: string = value.trim().toLowerCase();
+
+        // Keep only a complete six-digit hexadecimal color.
+        return /^#[0-9a-f]{6}$/.test(color) ? color : fallback;
+    }
+
+    /** Read the accent color for each supported level. */
+    private readAppearance(value: unknown): AppearanceSettings {
+        // Read each supported level and ignore unknown level keys.
+        return {
+            area: this.readColor(
+                ownValue(value, "area"),
+                CONFIG.DEFAULT_SETTINGS.appearance.area,
+            ),
+            program: this.readColor(
+                ownValue(value, "program"),
+                CONFIG.DEFAULT_SETTINGS.appearance.program,
+            ),
+        };
+    }
+
     /** Read one basename pattern, falling back on a malformed or empty value. */
     private readPattern(value: unknown, kind: CommitmentLevel): string {
         // Require exact text with visible content.
@@ -177,6 +224,9 @@ export class SettingsReader {
             ? storedSort
             : CONFIG.DEFAULT_SETTINGS.presentation.sort;
 
+        // Read the accent colors without trusting their shape.
+        const appearance: AppearanceSettings = this.readAppearance(ownValue(data, "appearance"));
+
         // Read each known creation kind and ignore unknown kind keys.
         const creationSource: unknown = ownValue(data, "creation");
 
@@ -196,6 +246,7 @@ export class SettingsReader {
         // Return the normalized settings shape.
         return {
             presentation: { mode, sort },
+            appearance,
             creation: { idStyle, ...creation },
         };
     }

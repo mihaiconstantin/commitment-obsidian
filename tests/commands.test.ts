@@ -172,7 +172,15 @@ describe("commitment graph commands", () => {
         // Invoke the registered command.
         await plugin.commands[0]?.callback?.();
 
-        expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
+        // Require the tree and its applied accent defaults.
+        const host: HTMLElement = document.querySelector(".commitment-graph__tree-host") as HTMLElement;
+        expect(host).not.toBeNull();
+        expect(host.style.getPropertyValue("--cg-area")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.area,
+        );
+        expect(host.style.getPropertyValue("--cg-program")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.program,
+        );
         expect(modalTexts()).toEqual([]);
     });
 
@@ -189,11 +197,13 @@ describe("commitment graph commands", () => {
         expect(container.textContent).toContain("Graph view");
         expect(container.textContent).toContain("Graph order");
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
-        expect(controls[0]?.value).toBe("tree");
-        expect(controls[1]?.value).toBe("count");
+        const byName = (name: string): Setting | undefined =>
+            controls.find((setting) => setting.nameEl.textContent === name);
+        expect(byName("Graph view")?.value).toBe("tree");
+        expect(byName("Graph order")?.value).toBe("count");
 
         // Change the mode and require the stored order to survive.
-        controls[0]?.change?.("json");
+        byName("Graph view")?.change?.("json");
         await Promise.resolve();
         expect(plugin.data).toEqual({
             ...CONFIG.DEFAULT_SETTINGS,
@@ -201,9 +211,45 @@ describe("commitment graph commands", () => {
         });
 
         // Change the order and require the stored mode to survive.
-        controls[1]?.change?.("name");
+        byName("Graph order")?.change?.("name");
         await Promise.resolve();
         expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
+    });
+
+    it("persists an accent color and resets it to the default", async () => {
+        // Compose the plugin and render its settings tab.
+        const { plugin } = await createPlugin();
+        plugin.settingTabs[0]?.display();
+
+        // Read the area and program accent controls.
+        const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
+        const area: Setting | undefined = controls.find(
+            (setting) => setting.nameEl.textContent === "Area accent",
+        );
+        const program: Setting | undefined = controls.find(
+            (setting) => setting.nameEl.textContent === "Program accent",
+        );
+
+        // Require both pickers to start on the applied defaults.
+        expect(area?.color?.value).toBe(CONFIG.DEFAULT_SETTINGS.appearance.area);
+        expect(program?.color?.value).toBe(CONFIG.DEFAULT_SETTINGS.appearance.program);
+
+        // Change the accent and require the complete normalized settings.
+        area?.change?.("#112233");
+        await Promise.resolve();
+        expect(plugin.data).toEqual({
+            ...CONFIG.DEFAULT_SETTINGS,
+            appearance: {
+                area: "#112233",
+                program: CONFIG.DEFAULT_SETTINGS.appearance.program,
+            },
+        });
+
+        // Reset the accent and require the same default in settings and picker.
+        area?.reset?.();
+        await Promise.resolve();
+        expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
+        expect(area?.color?.value).toBe(CONFIG.DEFAULT_SETTINGS.appearance.area);
     });
 
     it("renders grouped creation fields and persists one without losing the others", async () => {
@@ -217,17 +263,19 @@ describe("commitment graph commands", () => {
         // Render the registered settings tab.
         plugin.settingTabs[0]?.display();
 
-        // Require the General, Area, Program, and Project group headings.
+        // Require the General, Appearance, Area, Program, and Project group headings.
         expect(
             Setting.instances.filter((setting) => setting.heading).map((setting) => setting.nameEl.textContent),
-        ).toEqual(["General", "Area", "Program", "Project"]);
+        ).toEqual(["General", "Appearance", "Area", "Program", "Project"]);
 
-        // Require the style choice, then template, folder, and pattern per kind.
+        // Require the accent colors, then the style and creation fields.
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
         expect(controls.map((setting) => setting.value)).toEqual([
             "tree",
             "name",
             "none",
+            CONFIG.DEFAULT_SETTINGS.appearance.area,
+            CONFIG.DEFAULT_SETTINGS.appearance.program,
             "",
             "",
             "Area - {{id}}",
@@ -240,12 +288,13 @@ describe("commitment graph commands", () => {
         ]);
 
         // Change the project folder through its text control.
-        controls[10]?.change?.("Commitments/Projects");
+        controls[12]?.change?.("Commitments/Projects");
         await Promise.resolve();
 
         // Require the complete normalized settings shape with the edited folder.
         expect(plugin.data).toEqual({
             presentation: { mode: "tree", sort: "name" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: { templatePath: "", folderPath: "", pattern: "Area - {{id}}" },
@@ -285,6 +334,7 @@ describe("commitment graph commands", () => {
         // Persist unsafe and padded creation values.
         const next: CommitmentSettings = {
             presentation: { mode: "tree", sort: "count" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: {
@@ -305,6 +355,7 @@ describe("commitment graph commands", () => {
         // Require the normalized shape, with the default patterns filled in.
         expect(plugin.data).toEqual({
             presentation: { mode: "tree", sort: "count" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: { templatePath: "Templates/area.md", folderPath: "", pattern: "Area - {{id}}" },

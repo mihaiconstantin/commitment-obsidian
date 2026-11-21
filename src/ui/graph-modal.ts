@@ -14,7 +14,11 @@ import { VaultContainerFileActions } from "../containers/vault-file-actions";
 import type { GraphResult } from "../graph/commitment-graph";
 import type { GraphArea } from "../graph/types";
 import { describeFailure } from "../helpers/utils";
-import type { CommitmentCreationSettings, PresentationSettings } from "../settings/settings";
+import type {
+    AppearanceSettings,
+    CommitmentCreationSettings,
+    PresentationSettings,
+} from "../settings/settings";
 import { orderAreas } from "./area-order";
 import { GraphTree } from "./graph-tree";
 
@@ -26,6 +30,9 @@ export class GraphModal extends Modal {
 
     /** Shape and area order used to present the graph. */
     private readonly presentation: PresentationSettings;
+
+    /** Accent colors used by the tree. */
+    private readonly appearance: AppearanceSettings;
 
     /** Supplier for the creation settings used by tree file actions. */
     private readonly creation: () => CommitmentCreationSettings;
@@ -71,6 +78,7 @@ export class GraphModal extends Modal {
             this.result.graph.getAreas(),
             this.presentation.sort,
             actions,
+            this.appearance,
         );
 
         // Bind "/" to the search field through the modal keymap.
@@ -142,6 +150,7 @@ export class GraphModal extends Modal {
         app: App,
         result: GraphResult,
         presentation: PresentationSettings,
+        appearance: AppearanceSettings,
         creation: () => CommitmentCreationSettings,
         released: (() => void) | null = null,
     ) {
@@ -149,6 +158,7 @@ export class GraphModal extends Modal {
         super(app);
         this.result = result;
         this.presentation = presentation;
+        this.appearance = appearance;
         this.creation = creation;
         this.released = released;
     }

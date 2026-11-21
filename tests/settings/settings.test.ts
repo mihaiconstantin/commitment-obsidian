@@ -44,6 +44,7 @@ describe("commitment settings", () => {
         // Require the nested values unchanged.
         expect(settings).toEqual({
             presentation: { mode: "tree", sort: "count" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: {
@@ -253,6 +254,24 @@ describe("commitment settings", () => {
             templatePath: "",
             folderPath: "",
             pattern: "Project - {{id}}",
+        });
+    });
+
+    it("loads appearance colors and falls back for malformed values", () => {
+        // Read one normalized override and unsupported values.
+        const settings: CommitmentSettings = reader.read({
+            appearance: {
+                area: " #Aa00Ff ",
+                program: "amber",
+                project: 4,
+                meeting: "#ffffff",
+            },
+        });
+
+        // Require the valid color and the program default.
+        expect(settings.appearance).toEqual({
+            area: "#aa00ff",
+            program: CONFIG.DEFAULT_SETTINGS.appearance.program,
         });
     });
 

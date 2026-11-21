@@ -12,7 +12,7 @@ import { Notice, setIcon } from "obsidian";
 import { CONFIG } from "../constants";
 import type { ContainerFileAction, ContainerFileActions } from "../containers/container-file-actions";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
-import type { GraphSort } from "../settings/settings";
+import type { AppearanceSettings, GraphSort } from "../settings/settings";
 import { TreeModel } from "./tree-model";
 import type { AreaView } from "./tree-model";
 
@@ -113,6 +113,13 @@ export class GraphTree {
 
     /** Whether one file action is already running. */
     private activating: boolean = false;
+
+    /** Apply the two stored accent colors to the tree host. */
+    private applyAppearance(container: HTMLElement, appearance: AppearanceSettings): void {
+        // Apply both accent colors before the rows are built.
+        container.style.setProperty("--cg-area", appearance.area);
+        container.style.setProperty("--cg-program", appearance.program);
+    }
 
     /** Build the toolbar, stats line, list, and footer gutter. */
     private buildChrome(container: HTMLElement): void {
@@ -697,10 +704,14 @@ export class GraphTree {
         areas: readonly GraphArea[],
         sort: GraphSort,
         actions: ContainerFileActions | null,
+        appearance: AppearanceSettings,
     ) {
         // Store the file action seam and the ordered tree model.
         this.actions = actions;
         this.model = new TreeModel(areas, sort);
+
+        // Apply the stored type accents before building the rows.
+        this.applyAppearance(container, appearance);
 
         // Reserve the widest count column so every meter ends at the same edge.
         const countDigits: number = Math.max(1, String(this.model.getMaxTotal()).length);

@@ -11,7 +11,12 @@
 
 import type { IdStyle } from "./containers/file-name";
 import type { CommitmentLevel } from "./graph/types";
-import type { CommitmentSettings, GraphSort, PresentationMode } from "./settings/settings";
+import type {
+    AppearanceSettings,
+    CommitmentSettings,
+    GraphSort,
+    PresentationMode,
+} from "./settings/settings";
 
 
 /** Default basename pattern per kind. */
@@ -34,9 +39,17 @@ const kindLabels: Readonly<Record<CommitmentLevel, string>> = {
 };
 
 
+/** Appearance used before the data file supplies any. */
+const defaultAppearance: AppearanceSettings = {
+    area: "#74a7ff",
+    program: "#b6682f"
+};
+
+
 /** Settings used before the data file supplies any. */
 const defaultSettings: CommitmentSettings = {
     presentation: { mode: "json", sort: "name" },
+    appearance: defaultAppearance,
     creation: {
         idStyle: defaultIdStyle,
         area: { templatePath: "", folderPath: "", pattern: defaultPatterns.area },

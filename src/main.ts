@@ -12,6 +12,7 @@ import type { CanonicalInput } from "./graph/types";
 import { describeFailure } from "./helpers/utils";
 import {
     SettingsReader,
+    type AppearanceSettings,
     type CommitmentCreationSettings,
     type CommitmentSettings,
 } from "./settings/settings";
@@ -140,6 +141,7 @@ export default class CommitmentPlugin extends Plugin {
         this.presenter = new ModalGraphPresenter(
             app,
             (): CommitmentCreationSettings => this.settings.creation,
+            (): AppearanceSettings => this.settings.appearance,
         );
     }
 

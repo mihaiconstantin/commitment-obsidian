@@ -14,21 +14,15 @@
     box-sizing: border-box;
 }
 
+/* GraphTree sets --cg-area and --cg-program inline from saved settings. */
 .commitment-graph__tree-host {
     --cg-bg: var(--background-primary);
     --cg-fg: var(--text-normal);
     --cg-muted: var(--text-muted);
     --cg-line: var(--background-modifier-border);
     --cg-card: var(--background-secondary);
-    --cg-p: var(--interactive-accent);
-    --cg-p-soft: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
-    --cg-p-line: color-mix(in srgb, var(--interactive-accent) 34%, transparent);
-    --cg-prog: #b45309;
+    --cg-accent: var(--interactive-accent);
     --cg-radius: 9px;
-}
-
-.theme-dark .commitment-graph__tree-host {
-    --cg-prog: #fcd34d;
 }
 
 .commitment-graph__tree-host .cg-tools {
@@ -61,8 +55,8 @@
 }
 
 .commitment-graph__tree-host .cg-search input:focus {
-    border-color: var(--cg-p);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cg-p) 18%, transparent);
+    border-color: var(--cg-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cg-accent) 18%, transparent);
 }
 
 .commitment-graph__tree-host .cg-search-icon {
@@ -244,7 +238,7 @@
 }
 
 .commitment-graph__tree-host .cg-file--create:hover {
-    color: var(--cg-p);
+    color: var(--cg-accent);
 }
 
 .commitment-graph__tree-host .cg-node:hover,
@@ -299,6 +293,7 @@
 .commitment-graph__tree-host .cg-node .cg-nm {
     font-weight: 600;
     font-size: 12.5px;
+    color: var(--cg-area);
 }
 
 .commitment-graph__tree-host .cg-leaf .cg-nm {
@@ -307,7 +302,7 @@
 
 .commitment-graph__tree-host .cg-node--program .cg-nm {
     font-weight: 600;
-    color: var(--cg-prog);
+    color: var(--cg-program);
 }
 
 .commitment-graph__tree-host .cg-num {
@@ -332,7 +327,7 @@
 .commitment-graph__tree-host .cg-meter i {
     display: block;
     height: 100%;
-    background: var(--cg-p);
+    background: var(--cg-area);
     border-radius: 2px;
 }
 
@@ -345,15 +340,11 @@
 }
 
 .commitment-graph__tree-host .cg-leaf--program .cg-glyph {
-    color: var(--cg-prog);
-}
-
-.commitment-graph__tree-host .cg-leaf--program .cg-nm {
-    color: var(--cg-muted);
+    color: var(--cg-program);
 }
 
 .commitment-graph__tree-host .cg-mark {
-    background: color-mix(in srgb, var(--cg-p) 26%, transparent);
+    background: color-mix(in srgb, var(--cg-accent) 26%, transparent);
     color: inherit;
     border-radius: 2px;
     padding: 0 1px;

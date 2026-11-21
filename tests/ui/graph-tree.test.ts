@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Notice } from "obsidian";
 
 import { GraphTree } from "../../src/ui/graph-tree";
+import { CONFIG } from "../../src/constants";
 import type { ContainerFileActions } from "../../src/containers/container-file-actions";
 import type { GraphArea } from "../../src/graph/types";
-import type { GraphSort } from "../../src/settings/settings";
+import type { AppearanceSettings, GraphSort } from "../../src/settings/settings";
 
 
 const AREAS: readonly GraphArea[] = [
@@ -19,6 +20,7 @@ function mount(
     areas: readonly GraphArea[] = AREAS,
     actions: ContainerFileActions | null = null,
     sort: GraphSort = "count",
+    appearance: AppearanceSettings = CONFIG.DEFAULT_SETTINGS.appearance,
 ): { host: HTMLElement; tree: GraphTree } {
     // Create the host element.
     const host: HTMLElement = document.createElement("div");
@@ -27,7 +29,7 @@ function mount(
     document.body.append(host);
 
     // Mount the tree and return its boundary.
-    return { host, tree: new GraphTree(host, areas, sort, actions) };
+    return { host, tree: new GraphTree(host, areas, sort, actions, appearance) };
 }
 
 
@@ -192,6 +194,31 @@ describe("graph tree", () => {
             ([details]): string | undefined => summary(details).querySelector(".cg-nm")?.id,
         );
         expect(new Set(ids).size).toBe(rows.length);
+    });
+
+    it("applies the default accents to the tree host", () => {
+        // Mount the tree with the shipped defaults.
+        const { host } = mount();
+
+        // Require the settings defaults on the host that owns the variables.
+        expect(host.style.getPropertyValue("--cg-area")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.area,
+        );
+        expect(host.style.getPropertyValue("--cg-program")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.program,
+        );
+    });
+
+    it("applies stored accents to the tree host", () => {
+        // Mount the tree with one override per supported level.
+        const { host } = mount(AREAS, null, "count", {
+            area: "#112233",
+            program: "#445566",
+        });
+
+        // Require every override on the host that owns the CSS variables.
+        expect(host.style.getPropertyValue("--cg-area")).toBe("#112233");
+        expect(host.style.getPropertyValue("--cg-program")).toBe("#445566");
     });
 
     it("reserves a count column for the widest area", () => {

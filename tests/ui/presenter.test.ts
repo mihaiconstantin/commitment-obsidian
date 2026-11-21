@@ -211,6 +211,24 @@ describe("text graph presenter", () => {
         expect(document.querySelector(".commitment-graph__json")).toBeNull();
     });
 
+    it("applies supplied accent colors to the tree", () => {
+        // Create the stub app and a presenter with appearance overrides.
+        const app: App = new App();
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(
+            app,
+            () => CONFIG.DEFAULT_SETTINGS.creation,
+            () => ({ area: "#112233", program: "#445566" }),
+        );
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
+
+        presenter.show(result, TREE_PRESENTATION);
+
+        // Require every supplied color on the mounted tree host.
+        const host: HTMLElement = document.querySelector(".commitment-graph__tree-host") as HTMLElement;
+        expect(host.style.getPropertyValue("--cg-area")).toBe("#112233");
+        expect(host.style.getPropertyValue("--cg-program")).toBe("#445566");
+    });
+
     it("renders no markup from identifiers in tree mode", () => {
         // Create the stub app.
         const app: App = new App();

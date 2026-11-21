@@ -7,7 +7,9 @@ import {
     PluginSettingTab,
     Setting,
     type App,
+    type ColorComponent,
     type DropdownComponent,
+    type ExtraButtonComponent,
     type TextComponent,
 } from "obsidian";
 
@@ -15,6 +17,8 @@ import { CONFIG } from "../constants";
 import { IdStyleCatalog } from "../containers/file-name";
 import type { CommitmentLevel } from "../graph/types";
 import type {
+    AccentLevel,
+    AppearanceSettings,
     CommitmentSettings,
     ContainerCreationSettings,
     GraphSort,
@@ -63,10 +67,28 @@ export class CommitmentSettingTab extends PluginSettingTab {
     /** Supported identifier styles for the dropdown and change gate. */
     private readonly styles: IdStyleCatalog = new IdStyleCatalog();
 
+    /** Accent copy for the two supported levels. */
+    private readonly accentDescriptions: Readonly<Record<AccentLevel, string>> = {
+        area: "Color for area names and size meters.",
+        program: "Color for program names and glyphs.",
+    };
+
     /** Render one group heading using the setting widget Obsidian provides. */
     private heading(container: HTMLElement, text: string): void {
         // Use the heading form of a setting, which exists at the minimum app version.
         new Setting(container).setName(text).setHeading();
+    }
+
+    /** Persist one accent color change with the other settings intact. */
+    private saveAppearance(kind: AccentLevel, value: string): void {
+        // Replace only the edited commitment level.
+        const appearance: AppearanceSettings = {
+            ...this.host.settings.appearance,
+            [kind]: value,
+        };
+
+        // Persist the complete settings value.
+        void this.host.saveSettings({ ...this.host.settings, appearance });
     }
 
     /** Persist one creation field change with the other settings intact. */
@@ -182,6 +204,44 @@ export class CommitmentSettingTab extends PluginSettingTab {
             });
     }
 
+    /** Render one commitment level's accent color choice. */
+    private appearanceSetting(container: HTMLElement, kind: AccentLevel): void {
+        // Read the stored color and the shipped default.
+        const stored: string = this.host.settings.appearance[kind];
+        const fallback: string = CONFIG.DEFAULT_SETTINGS.appearance[kind];
+
+        // Keep the picker accessible to the reset control.
+        let picker: ColorComponent | null = null;
+
+        // Create the color setting and its reset action.
+        const setting: Setting = new Setting(container)
+            .setName(`${CONFIG.KIND_LABELS[kind]} accent`)
+            .setDesc(this.accentDescriptions[kind]);
+        setting.addColorPicker((component: ColorComponent): void => {
+            // Store the component and show the applied color.
+            picker = component;
+            component.setValue(stored);
+
+            // Persist a changed picker value.
+            component.onChange((value: string): void => {
+                // Save the selected accent.
+                this.saveAppearance(kind, value);
+            });
+        });
+        setting.addExtraButton((button: ExtraButtonComponent): void => {
+            // Restore the shipped default and update the visible picker.
+            button.setIcon("rotate-ccw");
+            button.setTooltip("Reset to the default");
+            button.onClick((): void => {
+                // Restore the default color.
+                this.saveAppearance(kind, fallback);
+
+                // Show the restored default.
+                picker?.setValue(fallback);
+            });
+        });
+    }
+
     /** Render the identifier style choice. */
     private styleSetting(container: HTMLElement): void {
         // Create the style setting.
@@ -254,6 +314,13 @@ export class CommitmentSettingTab extends PluginSettingTab {
         this.presentationSetting(container);
         this.sortSetting(container);
         this.styleSetting(container);
+
+        // Render the accent color for every supported commitment level.
+        this.heading(container, "Appearance");
+        for (const kind of ["area", "program"] as const) {
+            // Add the level's color picker and reset action.
+            this.appearanceSetting(container, kind);
+        }
 
         // Add the three creation fields for every container kind.
         for (const kind of ["area", "program", "project"] as const) {
