@@ -186,6 +186,12 @@ export class GraphBuilder {
         return value !== "" && value === value.trim();
     }
 
+    /** Return one commitment kind with its first letter capitalized. */
+    private kindLabel(kind: CommitmentKind): string {
+        // Capitalize the kind for the start of an error message.
+        return kind.charAt(0).toUpperCase() + kind.slice(1);
+    }
+
     /** Throw when an identifier is absent or invalid for a required field. */
     private requiredIdentifier(
         input: CanonicalInput,
@@ -196,7 +202,7 @@ export class GraphBuilder {
         if (!input.frontmatter.has(field)) {
             // Report the missing field with its source path.
             throw new Error(
-                `Canonical ${kind} container '${input.path}' is missing required field '${field}'.`,
+                `${this.kindLabel(kind)} \`${input.path}\` is missing \`${field}\`.`,
             );
         }
 
@@ -207,7 +213,7 @@ export class GraphBuilder {
         if (!this.isValidIdentifier(value)) {
             // Report the invalid field with its source path.
             throw new Error(
-                `Canonical ${kind} container '${input.path}' has an invalid '${field}' value.`,
+                `${this.kindLabel(kind)} \`${input.path}\` has invalid \`${field}\`.`,
             );
         }
 
@@ -253,9 +259,7 @@ export class GraphBuilder {
         // Reject every other value that is not a valid program identifier.
         if (!this.isValidIdentifier(value)) {
             // Report the invalid optional relationship.
-            throw new Error(
-                `Canonical project container '${input.path}' has an invalid 'program' value.`,
-            );
+            throw new Error(`Project \`${input.path}\` has invalid \`program\`.`);
         }
 
         // Return the validated program identifier.
@@ -270,13 +274,13 @@ export class GraphBuilder {
 
         // Reject a missing or malformed level or anchor.
         if (level === null || anchor === null || SUPPORT_LEVELS[level] !== true) {
-            // Report no usable association.
+            // Report no valid association.
             return null;
         }
 
         // Reject an invalid anchored identifier.
         if (!this.isValidIdentifier(anchor)) {
-            // Report no usable association.
+            // Report no valid association.
             return null;
         }
 
@@ -395,13 +399,13 @@ export class GraphBuilder {
             // Read the support association from its dependent fields.
             const association: SupportAssociation | null = this.supportAssociation(input);
 
-            // Diagnose a support container with no usable canonical anchor.
+            // Diagnose a support container with no valid level or anchor.
             if (association === null) {
                 // Report the unresolved input without inventing a target.
                 findings.push(
                     createDiagnostic(
                         "unresolved_anchor",
-                        `Canonical ${kind} container '${input.path}' has no usable canonical anchor; it is omitted from the commitment graph.`,
+                        "Support container has no valid `level` or `anchor`. Omitted from graph.",
                         [input.path],
                     ),
                 );
@@ -494,12 +498,12 @@ export class GraphBuilder {
     private duplicateError(duplicate: DuplicateContainers): Error {
         // Quote each distinct source path.
         const rendered: string = duplicate.paths
-            .map((path: string): string => `'${path}'`)
+            .map((path: string): string => `\`${path}\``)
             .join(", ");
 
-        // Build the message naming the level, identifier, and sources.
+        // Build the message with the concept level, identifier, and sources.
         return new Error(
-            `Multiple ${duplicate.level} containers represent ${duplicate.level} identifier '${duplicate.identifier}': ${rendered}.`,
+            `Duplicate ${duplicate.level} \`${duplicate.identifier}\` at ${rendered}.`,
         );
     }
 
@@ -595,9 +599,9 @@ export class GraphBuilder {
         if (stableAreas.length > 1) {
             // Render the readable area list.
             const rendered: string = stableAreas
-                .map((area: string): string => `'${area}'`)
+                .map((area: string): string => `\`${area}\``)
                 .join(", ");
-            const message: string = `Program identifier '${program}' has conflicting area declarations: ${rendered}.`;
+            const message: string = `Program \`${program}\` has conflicting areas ${rendered}.`;
 
             // Return the blocking structural finding.
             return createDiagnostic(
@@ -616,7 +620,8 @@ export class GraphBuilder {
         }
 
         // Build the underfilled warning with the domain recommendation.
-        const message: string = `Program identifier '${program}' in area '${stableAreas[0]}' has ${projectCount} project(s); at least 2 are recommended.`;
+        const projectLabel: string = projectCount === 1 ? "project" : "projects";
+        const message: string = `Program \`${program}\` in area \`${stableAreas[0]}\` has ${projectCount} ${projectLabel}. 2 or more expected.`;
 
         // Return the nonblocking program finding.
         return createDiagnostic(

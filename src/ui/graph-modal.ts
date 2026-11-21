@@ -124,7 +124,7 @@ export class GraphModal extends Modal {
                 text: diagnostic.message,
             });
 
-            // Add the paths when the warning names any.
+            // Add the paths when present.
             if (diagnostic.paths.length > 0) {
                 // Render the source paths as a separate line.
                 item.createEl("div", {

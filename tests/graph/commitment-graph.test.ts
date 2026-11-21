@@ -83,7 +83,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
             area("b/area.md", "shared"),
             area("a/area.md", "shared"),
         ],
-        failure: /Multiple area containers represent area identifier 'shared': 'a\/area\.md', 'b\/area\.md'\./,
+        failure: /Duplicate area `shared` at `a\/area\.md`, `b\/area\.md`\./,
     },
     {
         name: "rejects duplicate program containers with every path",
@@ -91,7 +91,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
             program("b/program.md", "shared", "work"),
             program("a/program.md", "shared", "work"),
         ],
-        failure: /Multiple program containers represent program identifier 'shared': 'a\/program\.md', 'b\/program\.md'\./,
+        failure: /Duplicate program `shared` at `a\/program\.md`, `b\/program\.md`\./,
     },
     {
         name: "selects the lexicographically first duplicated identifier",
@@ -101,7 +101,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
             area("z/one.md", "zeta"),
             area("a/one.md", "shared"),
         ],
-        failure: /Multiple area containers represent area identifier 'shared': 'a\/one\.md', 'a\/two\.md'\./,
+        failure: /Duplicate area `shared` at `a\/one\.md`, `a\/two\.md`\./,
     },
     {
         name: "reports area duplicates before program and project duplicates",
@@ -113,7 +113,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
             area("z/two.md", "zulu"),
             area("z/one.md", "zulu"),
         ],
-        failure: /Multiple area containers represent area identifier 'zulu': 'z\/one\.md', 'z\/two\.md'\./,
+        failure: /Duplicate area `zulu` at `z\/one\.md`, `z\/two\.md`\./,
     },
     {
         name: "reports program duplicates before project duplicates",
@@ -123,7 +123,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
             program("z/two.md", "zeta", "work"),
             program("z/one.md", "zeta", "work"),
         ],
-        failure: /Multiple program containers represent program identifier 'zeta': 'z\/one\.md', 'z\/two\.md'\./,
+        failure: /Duplicate program `zeta` at `z\/one\.md`, `z\/two\.md`\./,
     },
     {
         name: "keeps the same identifier at different concept levels distinct",
@@ -163,7 +163,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
             area("b/one.md", "shared"),
             input("z/missing.md", [["type", "project"], ["area", "work"]]),
         ],
-        failure: /Canonical project container 'z\/missing\.md' is missing required field 'id'\./,
+        failure: /Project `z\/missing\.md` is missing `id`\./,
     },
 ];
 
@@ -269,7 +269,7 @@ describe("commitment graph", () => {
 
             // Require the invalid relationship to block construction.
             expect(() => buildGraph([invalid])).toThrowError(
-                /invalid 'program' value/,
+                /has invalid `program`/,
             );
         },
     );
@@ -294,7 +294,7 @@ describe("commitment graph", () => {
                 project("a/project.md", "shared"),
             ]),
         ).toThrowError(
-            /Multiple project containers represent project identifier 'shared': 'a\/project\.md', 'b\/project.md'\./,
+            /Duplicate project `shared` at `a\/project\.md`, `b\/project\.md`\./,
         );
     });
 
@@ -307,7 +307,7 @@ describe("commitment graph", () => {
                 project("b/project.md", "shared"),
             ]),
         ).toThrowError(
-            /Multiple project containers represent project identifier 'shared': 'a\/project\.md', 'b\/project\.md', 'c\/project\.md'\./,
+            /Duplicate project `shared` at `a\/project\.md`, `b\/project\.md`, `c\/project\.md`\./,
         );
     });
 
@@ -330,7 +330,7 @@ describe("commitment graph", () => {
                 project("projects/alpha.md", "alpha", "work", "phd"),
                 project("projects/beta.md", "beta", "personal", "phd"),
             ]),
-        ).toThrowError(/conflicting area declarations: 'personal', 'work'/);
+        ).toThrowError(/Program `phd` has conflicting areas `personal`, `work`/);
     });
 
     it("warns for underfilled programs and keeps them", () => {
@@ -349,6 +349,7 @@ describe("commitment graph", () => {
         expect(result.diagnostics).toHaveLength(1);
         expect(result.diagnostics[0]).toMatchObject({
             code: "underfilled_program",
+            message: "Program `phd` in area `work` has 1 project. 2 or more expected.",
             paths: ["projects/alpha.md"],
             actual: 1,
             required: 2,
@@ -361,6 +362,7 @@ describe("commitment graph", () => {
 
         expect(result.diagnostics[0]).toMatchObject({
             code: "underfilled_program",
+            message: "Program `phd` in area `work` has 0 projects. 2 or more expected.",
             actual: 0,
             required: 2,
         });
@@ -385,13 +387,22 @@ describe("commitment graph", () => {
         expect(result.diagnostics).toEqual([
             expect.objectContaining({
                 code: "unresolved_anchor",
+                message: "Support container has no valid `level` or `anchor`. Omitted from graph.",
                 paths: ["notes/unanchored.md"],
             }),
             expect.objectContaining({
                 code: "unresolved_anchor",
+                message: "Support container anchors to unknown project `missing`. Omitted from graph.",
                 paths: ["meetings/missing.md"],
             }),
         ]);
+
+        // Require the rendered message and the path line to avoid repeating the path.
+        for (const diagnostic of result.diagnostics) {
+            for (const path of diagnostic.paths) {
+                expect(diagnostic.message).not.toContain(path);
+            }
+        }
     });
 
     it("resolves supports to known areas, programs, and projects", () => {
@@ -447,17 +458,17 @@ describe("commitment graph", () => {
             buildGraph([
                 input("projects/missing.md", [["type", "project"], ["area", "work"]]),
             ]),
-        ).toThrowError(/missing required field 'id'/);
+        ).toThrowError(/missing `id`/);
         expect(() =>
             buildGraph([
                 input("projects/no-area.md", [["type", "project"], ["id", "alpha"]]),
             ]),
-        ).toThrowError(/missing required field 'area'/);
+        ).toThrowError(/missing `area`/);
         expect(() =>
             buildGraph([
                 input("areas/no-id.md", [["type", "area"], ["active", true]]),
             ]),
-        ).toThrowError(/missing required field 'id'/);
+        ).toThrowError(/missing `id`/);
     });
 
     it("rejects padded and whitespace-only identifiers", () => {
@@ -465,7 +476,7 @@ describe("commitment graph", () => {
         for (const identifier of [" padded", "padded ", "   ", ""]) {
             expect(() =>
                 buildGraph([project("projects/bad.md", identifier)]),
-            ).toThrowError(/invalid 'id' value/);
+            ).toThrowError(/has invalid `id`/);
         }
     });
 
@@ -519,7 +530,7 @@ describe("commitment graph", () => {
     it("emits classification, program, then support diagnostics in that order", () => {
         // Derive a graph whose inputs produce one warning in every phase.
         const result: GraphResult = buildGraph([
-            // Add a support container with no usable anchor, classified in the read phase.
+            // Add a support container with no valid anchor, classified in the read phase.
             input("z/no-anchor.md", [["type", "meeting"]]),
             // Add a program that coordinates one project, which is underfilled.
             program("programs/phd.md", "phd", "work"),
@@ -535,12 +546,21 @@ describe("commitment graph", () => {
             "unresolved_anchor",
         ]);
 
-        // Require each diagnostic to name its own source path.
+        // Require each diagnostic to carry its own source path.
         expect(result.diagnostics.map((entry) => entry.paths[0])).toEqual([
             "z/no-anchor.md",
             "programs/phd.md",
             "a/unanchored.md",
         ]);
+
+        // Require concise messages that leave path rendering to the paths field.
+        for (const diagnostic of result.diagnostics) {
+            expect(diagnostic.message).not.toContain("Canonical");
+            expect(diagnostic.message).not.toMatch(/[;:']/);
+            for (const path of diagnostic.paths) {
+                expect(diagnostic.message).not.toContain(path);
+            }
+        }
     });
 
     it("orders every input phase by code-unit source path", () => {

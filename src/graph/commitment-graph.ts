@@ -77,7 +77,7 @@ export class CommitmentGraph {
             findings.push(
                 createDiagnostic(
                     "unresolved_anchor",
-                    `Support container '${support.path}' anchors to unknown ${support.level} identifier '${support.identifier}'; it is omitted from the commitment graph.`,
+                    `Support container anchors to unknown ${support.level} \`${support.identifier}\`. Omitted from graph.`,
                     [support.path],
                 ),
             );

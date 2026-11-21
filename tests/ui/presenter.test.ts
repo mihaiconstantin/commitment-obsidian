@@ -89,6 +89,7 @@ describe("text graph presenter", () => {
         );
         expect(warnings?.children).toHaveLength(1);
         expect(warnings?.textContent).toContain("meetings/missing.md");
+        expect(warnings?.textContent?.match(/meetings\/missing\.md/g)).toHaveLength(1);
         expect(document.querySelector(".commitment-graph__paths")?.textContent).toBe(
             "meetings/missing.md",
         );
