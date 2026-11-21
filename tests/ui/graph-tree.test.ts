@@ -194,6 +194,24 @@ describe("graph tree", () => {
         expect(new Set(ids).size).toBe(rows.length);
     });
 
+    it("reserves a count column for the widest area", () => {
+        // Build one area with a two-digit project count.
+        const projects: readonly string[] = Array.from(
+            { length: 12 },
+            (_value: unknown, index: number): string => `p${index}`,
+        );
+        const areas: readonly GraphArea[] = [
+            { id: "work", projects, programs: [] },
+            { id: "home", projects: ["chores"], programs: [] },
+        ];
+
+        // Mount the tree.
+        const { host } = mount(areas);
+
+        // Require a two-character column for every count.
+        expect(host.style.getPropertyValue("--cg-count-ch")).toBe("2ch");
+    });
+
     it("orders areas by identifier when name order is configured", () => {
         // Mount the same areas in name order.
         const { host } = mount(AREAS, null, "name");

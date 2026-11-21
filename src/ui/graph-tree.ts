@@ -702,6 +702,10 @@ export class GraphTree {
         this.actions = actions;
         this.model = new TreeModel(areas, sort);
 
+        // Reserve the widest count column so every meter ends at the same edge.
+        const countDigits: number = Math.max(1, String(this.model.getMaxTotal()).length);
+        container.style.setProperty("--cg-count-ch", `${countDigits}ch`);
+
         // Clear any previous content.
         container.replaceChildren();
 

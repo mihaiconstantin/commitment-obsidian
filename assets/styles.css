@@ -313,9 +313,11 @@
 .commitment-graph__tree-host .cg-num {
     margin-left: auto;
     flex: none;
+    min-width: var(--cg-count-ch, 1ch);
     font-size: 10.5px;
     color: var(--cg-muted);
     font-variant-numeric: tabular-nums;
+    text-align: right;
 }
 
 .commitment-graph__tree-host .cg-meter {
