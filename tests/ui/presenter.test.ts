@@ -345,63 +345,6 @@ describe("text graph presenter", () => {
         expect(second).toBe(true);
     });
 
-    it("clears the search on Escape before Obsidian closes the modal", () => {
-        // Create the stub app.
-        const app: App = new App();
-        // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
-        // Derive a graph with one area.
-        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
-
-        presenter.show(result, TREE_PRESENTATION);
-        const modal: Modal = Modal.instances[0] as Modal;
-        const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
-        const escape: (() => unknown) | undefined = modal.scope.handlers
-            .find((handler) => handler.key === "Escape")?.func;
-        expect(escape).toBeDefined();
-
-        // Type a query and press Escape from the search field.
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.focus();
-        const cleared: unknown = escape?.();
-
-        // Require the query to clear and the modal to stay open.
-        expect(cleared).toBe(false);
-        expect(input.value).toBe("");
-        expect(modal.closed).toBe(false);
-        expect(document.querySelector(".cg-stats")?.textContent).toBe("1 areas · 1 projects · 0 programs");
-
-        // Leave Escape alone when the search field does not have focus.
-        input.blur();
-        expect(escape?.()).toBe(true);
-
-        // Release the tree listeners when the modal closes.
-        modal.close();
-    });
-
-    it("releases the tree listeners when the modal closes", () => {
-        // Create the stub app.
-        const app: App = new App();
-        // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
-        // Derive a graph with one area.
-        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
-
-        presenter.show(result, TREE_PRESENTATION);
-        const modal: Modal = Modal.instances[0] as Modal;
-        const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
-
-        // Type a query, close the modal, then press Escape.
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        modal.close();
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-
-        // Require the closed tree to ignore the shortcut.
-        expect(input.value).toBe("alpha");
-    });
-
     it("releases the rendered tree when the modal closes", () => {
         // Create the stub app and present one tree.
         const app: App = new App();
@@ -434,16 +377,6 @@ describe("text graph presenter", () => {
         // Require the older modal to close and the newer one to stay open.
         expect(first.closed).toBe(true);
         expect(second.closed).toBe(false);
-
-        // Require the newer tree to keep its shortcuts.
-        const input: HTMLInputElement = second.contentEl.querySelector(".cg-search input") as HTMLInputElement;
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.focus();
-        const escape: (() => unknown) | undefined = second.scope.handlers
-            .find((handler) => handler.key === "Escape")?.func;
-        expect(escape?.()).toBe(false);
-        expect(input.value).toBe("");
 
         // Close the newer modal after the assertions.
         second.close();

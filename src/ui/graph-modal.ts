@@ -95,19 +95,6 @@ export class GraphModal extends Modal {
             // Return false so Obsidian prevents the slash from being typed.
             return false;
         });
-
-        // Clear the filter on Escape before Obsidian closes the modal.
-        this.scope.register(null, "Escape", (): false | true => {
-            // Leave Escape alone unless the search field has focus.
-            if (!tree.hasSearchFocus()) {
-                // Let Obsidian close the modal.
-                return true;
-            }
-
-            // Clear the query and keep the modal open.
-            tree.clearSearch();
-            return false;
-        });
     }
 
     /** Add the warnings heading and entries when the build reported any. */
