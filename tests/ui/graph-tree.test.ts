@@ -491,9 +491,9 @@ describe("graph tree", () => {
         const create: Element = host.querySelector(".cg-file--create") as Element;
         expect(create.getAttribute("data-cg-action")).toBe("create");
         expect(create.getAttribute("aria-hidden")).toBeNull();
-        expect(create.getAttribute("data-icon")).toBe("plus");
+        expect(create.getAttribute("data-icon")).toBe("circle-plus");
         expect(create.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-        expect((host.querySelector(".cg-file--open") as Element).getAttribute("data-icon")).toBe("pencil");
+        expect((host.querySelector(".cg-file--open") as Element).getAttribute("data-icon")).toBe("sticky-note");
     });
 
     it("activates the seam once with the exact row identity", async () => {

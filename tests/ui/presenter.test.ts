@@ -431,7 +431,7 @@ describe("text graph presenter", () => {
         second.close();
     });
 
-    it("renders pencils for explicit containers and pluses for implicit ones", () => {
+    it("renders sticky-note icons for explicit containers and circle-plus icons for implicit ones", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
@@ -482,7 +482,7 @@ describe("text graph presenter", () => {
         presenter.show(result, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
 
-        // Click the project pencil.
+        // Click the project sticky-note icon.
         (modal.contentEl.querySelector(".cg-leaf + .cg-file") as HTMLElement).click();
         await vi.waitFor(() => {
             // Require the modal to close after the open call settles.

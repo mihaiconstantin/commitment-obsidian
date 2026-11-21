@@ -249,8 +249,8 @@ export class GraphTree {
         button.setAttribute("aria-label", label);
         button.title = label;
 
-        // Add the pencil or plus icon.
-        setIcon(button, action === "open" ? "pencil" : "plus");
+        // Add the sticky note or circle plus icon.
+        setIcon(button, action === "open" ? "sticky-note" : "circle-plus");
 
         // Activate the file action without toggling the enclosing details row.
         button.addEventListener("click", (event: MouseEvent): void => {
