@@ -13,13 +13,13 @@ import type { ContainerFileActions } from "../containers/container-file-actions"
 import { VaultContainerFileActions } from "../containers/vault-file-actions";
 import type { GraphResult } from "../graph/commitment-graph";
 import type { GraphArea } from "../graph/types";
+import { orderAreas } from "../helpers/area-order";
 import { describeFailure } from "../helpers/utils";
 import type {
     AppearanceSettings,
     CommitmentCreationSettings,
     PresentationSettings,
 } from "../settings/settings";
-import { orderAreas } from "./area-order";
 import { GraphTree } from "./graph-tree";
 
 

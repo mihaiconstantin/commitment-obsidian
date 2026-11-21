@@ -7,8 +7,8 @@
  */
 
 import type { GraphArea, GraphProgram } from "../graph/types";
+import { countAreaProjects, orderAreas } from "../helpers/area-order";
 import type { GraphSort } from "../settings/settings";
-import { countAreaProjects, orderAreas } from "./area-order";
 
 
 /** One area reduced to the part that survives the active query. */
