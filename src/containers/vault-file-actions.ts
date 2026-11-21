@@ -7,15 +7,15 @@
 
 import { moment, TFile, TFolder, type App, type TAbstractFile } from "obsidian";
 
-import { parseFrontmatter } from "../frontmatter/parser";
-import { CommitmentGraph } from "../graph/commitment-graph";
-import { DEFAULT_ID_STYLE, type IdStyle } from "./file-name";
+import { CONFIG } from "../constants";
+import type { CommitmentGraph } from "../graph/commitment-graph";
 import type { CommitmentLevel, ContainerIdentity } from "../graph/types";
-import { describeFailure } from "../plugin-failure";
+import { describeFailure } from "../helpers/utils";
 import type { ContainerCreationSettings } from "../settings/settings";
-import { composeContainerDocument } from "./container-document";
+import { ContainerDocumentComposer } from "./container-document";
 import type { ContainerFileActions, ContainerFileAction } from "./container-file-actions";
-import { containerPath } from "./container-path";
+import { ContainerPathBuilder } from "./container-path";
+import type { IdStyle } from "./file-name";
 
 
 /** Open existing container files and create implicit ones. */
@@ -32,78 +32,8 @@ export class VaultContainerFileActions implements ContainerFileActions {
     /** Supplier for the global identifier style, read at activation time. */
     private readonly styleFor: () => IdStyle;
 
-    /** Construct the actions for one graph and creation settings supplier. */
-    constructor(
-        app: App,
-        graph: CommitmentGraph,
-        settingsFor: (kind: CommitmentLevel) => ContainerCreationSettings,
-        styleFor: () => IdStyle = (): IdStyle => DEFAULT_ID_STYLE,
-    ) {
-        // Store the app, graph, and settings suppliers.
-        this.app = app;
-        this.graph = graph;
-        this.settingsFor = settingsFor;
-        this.styleFor = styleFor;
-    }
-
-    /** Return whether the row opens an indexed file or creates one. */
-    actionFor(identity: ContainerIdentity): ContainerFileAction {
-        // Read the indexed source path without touching the vault.
-        return this.graph.getContainerPath(identity.kind, identity.id) === null
-            ? "create"
-            : "open";
-    }
-
-    /** Open the indexed file or create the configured new document. */
-    async activate(identity: ContainerIdentity): Promise<void> {
-        // Open an existing container file.
-        const indexed: string | null = this.graph.getContainerPath(identity.kind, identity.id);
-        if (indexed !== null) {
-            // Open the indexed source file.
-            await this.openIndexed(indexed);
-            return;
-        }
-
-        // Read the kind's creation settings at activation time.
-        const settings: ContainerCreationSettings = this.settingsFor(identity.kind);
-
-        // Derive the target path, reporting an unusable identifier.
-        let target: string;
-        try {
-            // Derive the configured target path.
-            target = containerPath(identity, settings.folderPath, settings.pattern, this.styleFor());
-        } catch (error) {
-            // Report the path-naming failure with the affected kind and identifier.
-            throw new Error(
-                `Cannot name the ${identity.kind} file for '${identity.id}': ${describeFailure(error)}`,
-            );
-        }
-
-        // Reject any file or folder that already occupies the target.
-        if (this.app.vault.getAbstractFileByPath(target) !== null) {
-            // Report the occupied target without writing.
-            throw new Error(`Cannot create '${target}': the path is already occupied.`);
-        }
-
-        // Read and compose the template before any folder or file write.
-        const text: string = await this.composeDocument(identity, settings, target);
-
-        // Create the missing parent folders after composition succeeds.
-        await this.ensureFolders(target);
-
-        // Create the composed document without overwriting.
-        let file: TFile;
-        try {
-            // Create the target document.
-            file = await this.app.vault.create(target, text);
-        } catch (error) {
-            // Report the creation failure with its target path.
-            throw new Error(`Could not create '${target}': ${describeFailure(error)}`);
-        }
-
-        // Open the created file in the main workspace.
-        await this.app.workspace.getLeaf(false).openFile(file);
-    }
+    /** Composer for new container documents. */
+    private readonly composer: ContainerDocumentComposer;
 
     /** Open one indexed container source file. */
     private async openIndexed(path: string): Promise<void> {
@@ -138,10 +68,9 @@ export class VaultContainerFileActions implements ContainerFileActions {
         }
 
         // Compose the document with the exact identity and the current moment.
-        let text: string;
         try {
-            // Apply placeholders and the identity override.
-            text = composeContainerDocument(
+            // Validate the identity, apply placeholders, and apply the identity override.
+            return this.composer.compose(
                 templateText,
                 identity,
                 (pattern: string): string => moment().format(pattern),
@@ -152,12 +81,6 @@ export class VaultContainerFileActions implements ContainerFileActions {
                 this.composeMessage(target, settings.templatePath, describeFailure(error)),
             );
         }
-
-        // Validate the composed frontmatter before writing anything.
-        this.assertValidDocument(identity, settings.templatePath, target, text);
-
-        // Return the validated document text.
-        return text;
     }
 
     /** Return the composition failure message with its template context. */
@@ -190,31 +113,6 @@ export class VaultContainerFileActions implements ContainerFileActions {
         } catch (error) {
             // Report the unreadable template with its path.
             throw new Error(`Could not read template '${path}': ${describeFailure(error)}`);
-        }
-    }
-
-    /** Ensure the composed document builds and reports the expected identity. */
-    private assertValidDocument(
-        identity: ContainerIdentity,
-        templatePath: string,
-        target: string,
-        text: string,
-    ): void {
-        try {
-            // Parse the composed frontmatter and build the single-document graph.
-            const frontmatter = parseFrontmatter(target, text);
-            const result = CommitmentGraph.build([{ path: target, frontmatter }]);
-
-            // Require the composed identity to be a graph member.
-            if (!result.graph.contains(identity.kind, identity.id)) {
-                // Report the missing identity.
-                throw new Error(`the ${identity.kind} identity is absent from the graph`);
-            }
-        } catch (error) {
-            // Report the invalid composed document with its target and template.
-            throw new Error(
-                this.composeMessage(target, templatePath, describeFailure(error)),
-            );
         }
     }
 
@@ -255,5 +153,85 @@ export class VaultContainerFileActions implements ContainerFileActions {
                 );
             }
         }
+    }
+
+    /** Construct the actions for one graph and creation settings supplier. */
+    public constructor(
+        app: App,
+        graph: CommitmentGraph,
+        settingsFor: (kind: CommitmentLevel) => ContainerCreationSettings,
+        styleFor: () => IdStyle = (): IdStyle => CONFIG.DEFAULT_ID_STYLE,
+    ) {
+        // Store the app, graph, and settings suppliers.
+        this.app = app;
+        this.graph = graph;
+        this.settingsFor = settingsFor;
+        this.styleFor = styleFor;
+
+        // Create the composer for new container documents.
+        this.composer = new ContainerDocumentComposer();
+    }
+
+    /** Return whether the row opens an indexed file or creates one. */
+    public actionFor(identity: ContainerIdentity): ContainerFileAction {
+        // Read the indexed source path without touching the vault.
+        return this.graph.getContainerPath(identity.kind, identity.id) === null
+            ? "create"
+            : "open";
+    }
+
+    /** Open the indexed file or create the configured new document. */
+    public async activate(identity: ContainerIdentity): Promise<void> {
+        // Open an existing container file.
+        const indexed: string | null = this.graph.getContainerPath(identity.kind, identity.id);
+        if (indexed !== null) {
+            // Open the indexed source file.
+            await this.openIndexed(indexed);
+            return;
+        }
+
+        // Read the kind's creation settings at activation time.
+        const settings: ContainerCreationSettings = this.settingsFor(identity.kind);
+
+        // Derive the target path, reporting an unusable identifier.
+        let target: string;
+        try {
+            // Derive the configured target path.
+            target = new ContainerPathBuilder(
+                settings.folderPath,
+                settings.pattern,
+                this.styleFor(),
+            ).path(identity);
+        } catch (error) {
+            // Report the path-naming failure with the affected kind and identifier.
+            throw new Error(
+                `Cannot name the ${identity.kind} file for '${identity.id}': ${describeFailure(error)}`,
+            );
+        }
+
+        // Reject any file or folder that already occupies the target.
+        if (this.app.vault.getAbstractFileByPath(target) !== null) {
+            // Report the occupied target without writing.
+            throw new Error(`Cannot create '${target}': the path is already occupied.`);
+        }
+
+        // Read and compose the template before any folder or file write.
+        const text: string = await this.composeDocument(identity, settings, target);
+
+        // Create the missing parent folders after composition succeeds.
+        await this.ensureFolders(target);
+
+        // Create the composed document without overwriting.
+        let file: TFile;
+        try {
+            // Create the target document.
+            file = await this.app.vault.create(target, text);
+        } catch (error) {
+            // Report the creation failure with its target path.
+            throw new Error(`Could not create '${target}': ${describeFailure(error)}`);
+        }
+
+        // Open the created file in the main workspace.
+        await this.app.workspace.getLeaf(false).openFile(file);
     }
 }

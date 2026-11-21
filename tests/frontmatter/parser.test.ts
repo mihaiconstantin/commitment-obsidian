@@ -1,22 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseFrontmatter } from "../../src/frontmatter/parser";
+import { FrontmatterParser } from "../../src/frontmatter/parser";
 
 describe("frontmatter parser", () => {
+    // Create the parser shared by the cases.
+    const parser: FrontmatterParser = new FrontmatterParser();
+
     it("returns an empty mapping without frontmatter", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter("note.md", "Body text.\n");
+        const parsed: ReadonlyMap<string, unknown> = parser.parse("note.md", "Body text.\n");
         expect(parsed.size).toBe(0);
     });
 
     it("parses an empty frontmatter block as an empty mapping", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter("note.md", "---\n---\nBody.\n");
+        const parsed: ReadonlyMap<string, unknown> = parser.parse("note.md", "---\n---\nBody.\n");
         expect(parsed.size).toBe(0);
     });
 
     it("keeps nested values and null distinctions", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter(
+        const parsed: ReadonlyMap<string, unknown> = parser.parse(
             "note.md",
             "---\ntitle: Example\nnested:\n  count: 2\nempty:\nvalue: null\n---\n",
         );
@@ -29,14 +32,14 @@ describe("frontmatter parser", () => {
 
     it("rejects an unterminated frontmatter block", () => {
         // Require the documented failure.
-        expect(() => parseFrontmatter("bad.md", "---\ntitle: Missing\n")).toThrowError(
+        expect(() => parser.parse("bad.md", "---\ntitle: Missing\n")).toThrowError(
             /Could not parse frontmatter in 'bad.md': unterminated frontmatter block/,
         );
     });
 
     it("rejects malformed YAML with its source path", () => {
         // Require the documented failure.
-        expect(() => parseFrontmatter("bad.md", "---\nkey: [\n---\n")).toThrowError(
+        expect(() => parser.parse("bad.md", "---\nkey: [\n---\n")).toThrowError(
             /Could not parse frontmatter in 'bad\.md'/,
         );
     });
@@ -44,38 +47,38 @@ describe("frontmatter parser", () => {
     it("rejects duplicate canonical keys", () => {
         // Require the documented failure.
         expect(() =>
-            parseFrontmatter("bad.md", "---\ntype: project\ntype: area\n---\n"),
+            parser.parse("bad.md", "---\ntype: project\ntype: area\n---\n"),
         ).toThrowError(/Could not parse frontmatter in 'bad\.md'/);
     });
 
     it("rejects a non-mapping root", () => {
         // Require the documented failure.
-        expect(() => parseFrontmatter("bad.md", "---\n- item\n---\n")).toThrowError(
+        expect(() => parser.parse("bad.md", "---\n- item\n---\n")).toThrowError(
             /frontmatter must be a mapping/,
         );
     });
 
     it("keeps date-like values as text", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter("note.md", "---\ndate: 2026-01-01\n---\n");
+        const parsed: ReadonlyMap<string, unknown> = parser.parse("note.md", "---\ndate: 2026-01-01\n---\n");
         expect(parsed.get("date")).toBe("2026-01-01");
     });
 
     it("keeps quoted binary digits as text", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter("note.md", "---\nid: \"0b10\"\n---\n");
+        const parsed: ReadonlyMap<string, unknown> = parser.parse("note.md", "---\nid: \"0b10\"\n---\n");
         expect(parsed.get("id")).toBe("0b10");
     });
 
     it("reads unquoted binary digits as text under the default schema", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter("note.md", "---\nid: 0b10\n---\n");
+        const parsed: ReadonlyMap<string, unknown> = parser.parse("note.md", "---\nid: 0b10\n---\n");
         expect(parsed.get("id")).toBe("0b10");
     });
 
     it("applies merge precedence with explicit keys winning", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter(
+        const parsed: ReadonlyMap<string, unknown> = parser.parse(
             "note.md",
             "---\ndefaults: &defaults\n  type: project\n  area: work\n<<: *defaults\nid: alpha\narea: personal\n---\n",
         );
@@ -86,7 +89,7 @@ describe("frontmatter parser", () => {
 
     it("keeps prototype-like keys as ordinary data", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter(
+        const parsed: ReadonlyMap<string, unknown> = parser.parse(
             "note.md",
             "---\n__proto__: alpha\nconstructor: beta\n---\n",
         );
@@ -96,7 +99,7 @@ describe("frontmatter parser", () => {
 
     it("keeps text fields when other keys are not strings", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter(
+        const parsed: ReadonlyMap<string, unknown> = parser.parse(
             "mixed-keys.md",
             "---\n1: x\ntrue: y\n? [a, b]\n: z\ntype: project\nid: alpha\n---\n",
         );
@@ -108,13 +111,13 @@ describe("frontmatter parser", () => {
     it("reports an unresolved alias with its source path", () => {
         // Require the documented failure.
         expect(() =>
-            parseFrontmatter("alias.md", "---\nbase: *missing\n---\n"),
+            parser.parse("alias.md", "---\nbase: *missing\n---\n"),
         ).toThrowError(/Could not parse frontmatter in 'alias\.md': Unresolved alias/);
     });
 
     it("allows a cyclic alias on an unrelated field", () => {
         // Parse the saved frontmatter.
-        const parsed: ReadonlyMap<string, unknown> = parseFrontmatter(
+        const parsed: ReadonlyMap<string, unknown> = parser.parse(
             "cyclic.md",
             "---\nloop: &loop [*loop]\ntype: project\nid: alpha\n---\n",
         );
