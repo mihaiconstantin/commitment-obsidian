@@ -401,7 +401,7 @@ describe("graph tree", () => {
 
         // Require the empty message instead of visible areas.
         expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(false);
-        expect(host.querySelector(".cg-empty")?.textContent).toContain("No area");
+        expect(host.querySelector(".cg-empty")?.textContent).toContain("No match");
         expect(areaDetails(host, "work").hidden).toBe(true);
         expect(areaDetails(host, "home").hidden).toBe(true);
         expect(host.querySelector(".cg-stats")?.textContent).toBe("0 of 4 projects");

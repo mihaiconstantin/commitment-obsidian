@@ -592,7 +592,7 @@ export class GraphTree {
         }
 
         // Report an empty result instead of a blank list.
-        this.empty.textContent = `No area, program, or project matches “${query}”.`;
+        this.empty.textContent = query === "" ? "No areas." : `No match for \`${query}\`.`;
         this.empty.hidden = visibleAreas > 0;
 
         // Report the filtered or complete totals.

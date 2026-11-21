@@ -279,7 +279,7 @@ describe("text graph presenter", () => {
 
         presenter.show(result, TREE_PRESENTATION);
 
-        expect(document.querySelector(".cg-empty")?.textContent).toContain("No area");
+        expect(document.querySelector(".cg-empty")?.textContent).toContain("No areas");
         expect(document.querySelector(".cg-node")).toBeNull();
     });
 
