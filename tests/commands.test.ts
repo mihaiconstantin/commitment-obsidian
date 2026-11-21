@@ -81,7 +81,7 @@ describe("commitment graph commands", () => {
         // Invoke the registered command.
         await plugin.commands[0]?.callback?.();
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Vault is still loading; try again",
+            CONFIG.NOT_READY_MESSAGE,
         ]);
         expect(vault.calls.reads).toEqual([]);
     });
