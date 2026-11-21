@@ -221,12 +221,13 @@
     margin-left: 0;
 }
 
-/* Size and space the open or create icon beside the title. */
+/* Size the open or create icon and mirror its title gap after it. */
 .commitment-graph__tree-host .cg-file {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: none;
+    margin-right: 8px;
     width: 24px;
     height: 24px;
     padding: 0;
