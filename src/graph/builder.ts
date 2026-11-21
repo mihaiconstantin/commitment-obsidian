@@ -3,15 +3,15 @@
  *
  * Construction normalizes every sorted input in one scan, rejects duplicate
  * containers, validates programs from the collected references, and projects
- * the area snapshots. Supports that anchor to a program or project stay pending
- * until the caller has a membership-checked snapshot.
+ * the area snapshots. The builder keeps supports that anchor to a program or
+ * project pending until graph membership is known, then reports unknown anchors.
  */
 
 import type { CanonicalField } from "../frontmatter/canonical-field";
 import { appendGrouped, uniqueSorted } from "../helpers/collections";
-import { compareText } from "../helpers/strings";
-import { CommitmentGraph, type GraphResult } from "./commitment-graph";
-import { createDiagnostic } from "./diagnostics";
+import { createDiagnostic } from "../helpers/diagnostics";
+import { compareText, isValidIdentifier } from "../helpers/strings";
+import { CommitmentGraph } from "./commitment-graph";
 import type {
     CanonicalInput,
     CommitmentKind,
@@ -19,7 +19,6 @@ import type {
     Diagnostic,
     GraphArea,
     GraphProgram,
-    PendingSupport,
 } from "./types";
 
 
@@ -92,6 +91,19 @@ interface SupportAssociation {
 }
 
 
+/** One pending support anchor awaiting graph membership. */
+interface PendingSupport {
+    /** Concept level of the anchored identifier. */
+    readonly level: CommitmentLevel;
+
+    /** Exact anchored identifier text. */
+    readonly identifier: string;
+
+    /** Root-relative source path. */
+    readonly path: string;
+}
+
+
 /** One duplicated container identifier and every distinct source path. */
 interface DuplicateContainers {
     /** Duplicated concept level. */
@@ -156,6 +168,16 @@ interface ProgramResolution {
 }
 
 
+/** A graph snapshot and the findings from the same construction pass. */
+export interface GraphBuild {
+    /** Immutable graph snapshot. */
+    readonly graph: CommitmentGraph;
+
+    /** Nonblocking findings from the same construction pass. */
+    readonly diagnostics: readonly Diagnostic[];
+}
+
+
 /** Own one graph construction pass over saved canonical inputs. */
 export class GraphBuilder {
     /** Canonical inputs copied into code-unit path order. */
@@ -172,18 +194,6 @@ export class GraphBuilder {
         // Require exact string text for the supplied value.
         const value: unknown = input.frontmatter.get(field);
         return typeof value === "string" ? value : null;
-    }
-
-    /** Return whether a value is a valid identifier for its concept level. */
-    private isValidIdentifier(value: unknown): value is string {
-        // Reject every non-text value without coercing it.
-        if (typeof value !== "string") {
-            // Report the unsupported value.
-            return false;
-        }
-
-        // Reject empty and padded values without normalizing.
-        return value !== "" && value === value.trim();
     }
 
     /** Return one commitment kind with its first letter capitalized. */
@@ -210,7 +220,7 @@ export class GraphBuilder {
         const value: unknown = input.frontmatter.get(field);
 
         // Reject a present value that is not a valid identifier.
-        if (!this.isValidIdentifier(value)) {
+        if (!isValidIdentifier(value)) {
             // Report the invalid field with its source path.
             throw new Error(
                 `${this.kindLabel(kind)} \`${input.path}\` has invalid \`${field}\`.`,
@@ -257,7 +267,7 @@ export class GraphBuilder {
         }
 
         // Reject every other value that is not a valid program identifier.
-        if (!this.isValidIdentifier(value)) {
+        if (!isValidIdentifier(value)) {
             // Report the invalid optional relationship.
             throw new Error(`Project \`${input.path}\` has invalid \`program\`.`);
         }
@@ -279,7 +289,7 @@ export class GraphBuilder {
         }
 
         // Reject an invalid anchored identifier.
-        if (!this.isValidIdentifier(anchor)) {
+        if (!isValidIdentifier(anchor)) {
             // Report no valid association.
             return null;
         }
@@ -557,15 +567,10 @@ export class GraphBuilder {
                 sourcePaths,
             );
 
-            // Report underfilled programs as warnings; keep contradictions blocking.
+            // Report the nonblocking underfilled program.
             if (finding !== null) {
-                if (finding.code === "underfilled_program") {
-                    // Retain the nonblocking program warning.
-                    findings.push(finding);
-                } else {
-                    // Raise the graph error from the blocking finding.
-                    throw new Error(finding.message);
-                }
+                // Retain the program warning.
+                findings.push(finding);
             }
 
             // Read the single validated area and its coordinated projects.
@@ -584,15 +589,14 @@ export class GraphBuilder {
         return { programs, findings };
     }
 
-    /** Return the structural finding for one program definition. */
+    /** Return the underfilled finding or throw for contradictory areas. */
     private programFinding(
         program: string,
         areas: readonly string[],
         projectCount: number,
         paths: readonly string[],
     ): Diagnostic | null {
-        // Sort the distinct source paths and declared areas.
-        const stablePaths: readonly string[] = uniqueSorted(paths);
+        // Sort the distinct declared areas.
         const stableAreas: readonly string[] = uniqueSorted(areas);
 
         // Reject contradictory area declarations instead of selecting a winner.
@@ -603,14 +607,8 @@ export class GraphBuilder {
                 .join(", ");
             const message: string = `Program \`${program}\` has conflicting areas ${rendered}.`;
 
-            // Return the blocking structural finding.
-            return createDiagnostic(
-                "contradictory_program_area",
-                message,
-                stablePaths,
-                stableAreas.length,
-                1,
-            );
+            // Raise the blocking structural error directly.
+            throw new Error(message);
         }
 
         // Accept a program that coordinates two or more distinct projects.
@@ -618,6 +616,9 @@ export class GraphBuilder {
             // Report no structural finding.
             return null;
         }
+
+        // Sort the distinct source paths for the warning.
+        const stablePaths: readonly string[] = uniqueSorted(paths);
 
         // Build the underfilled warning with the domain recommendation.
         const projectLabel: string = projectCount === 1 ? "project" : "projects";
@@ -628,8 +629,6 @@ export class GraphBuilder {
             "underfilled_program",
             message,
             stablePaths,
-            projectCount,
-            2,
         );
     }
 
@@ -701,6 +700,36 @@ export class GraphBuilder {
         };
     }
 
+    /** Build findings for support anchors whose targets are absent from the graph. */
+    private supportFindings(
+        supports: readonly PendingSupport[],
+        members: Readonly<Record<CommitmentLevel, ReadonlySet<string>>>,
+    ): readonly Diagnostic[] {
+        // Start the findings in source-path order.
+        const findings: Diagnostic[] = [];
+
+        // Check each deferred support target after the graph membership is known.
+        for (const support of supports) {
+            // Keep a support whose target exists in the graph.
+            if (members[support.level].has(support.identifier)) {
+                // Continue with the next support.
+                continue;
+            }
+
+            // Diagnose the unresolved target without inventing a graph node.
+            findings.push(
+                createDiagnostic(
+                    "unresolved_anchor",
+                    `Support container anchors to unknown ${support.level} \`${support.identifier}\`. Omitted from graph.`,
+                    [support.path],
+                ),
+            );
+        }
+
+        // Return the unresolved-target findings.
+        return findings;
+    }
+
     /** Index the first explicit container source path per concept level. */
     private containerPaths(
         normalized: NormalizedInputs,
@@ -749,7 +778,7 @@ export class GraphBuilder {
     }
 
     /** Normalize, validate, and project the commitment graph. */
-    public build(): GraphResult {
+    public build(): GraphBuild {
         // Scan every sorted input once and collect the normalized local data.
         const normalized: NormalizedInputs = this.normalize();
 
@@ -769,16 +798,21 @@ export class GraphBuilder {
                     this.buildArea(area, normalized.projects, resolution.programs),
             );
 
-        // Copy the findings so the snapshot can append its own diagnostics.
-        const diagnostics: Diagnostic[] = [...normalized.findings, ...resolution.findings];
+        // Build the membership sets used by the support checks.
+        const members: Readonly<Record<CommitmentLevel, ReadonlySet<string>>> =
+            this.members(normalized, resolution.programs);
 
-        // Create the immutable snapshot, which resolves the pending supports.
+        // Collect findings in their stable construction order.
+        const diagnostics: readonly Diagnostic[] = [
+            ...normalized.findings,
+            ...resolution.findings,
+            ...this.supportFindings(normalized.pendingSupports, members),
+        ];
+
+        // Create the immutable snapshot from the graph data alone.
         const graph: CommitmentGraph = new CommitmentGraph(
             areas,
-            this.members(normalized, resolution.programs),
             this.containerPaths(normalized),
-            normalized.pendingSupports,
-            diagnostics,
         );
 
         // Return the graph and diagnostics from the same construction pass.

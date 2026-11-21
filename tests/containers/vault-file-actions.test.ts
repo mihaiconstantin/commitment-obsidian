@@ -4,8 +4,8 @@ vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App } from "obsidian";
 import { CONFIG } from "../../src/constants";
-import { GraphBuilder } from "../../src/graph/builder";
-import type { CommitmentGraph, GraphResult } from "../../src/graph/commitment-graph";
+import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
+import type { CommitmentGraph } from "../../src/graph/commitment-graph";
 import type { ContainerCreationSettings } from "../../src/settings/settings";
 import type { CanonicalInput, ContainerIdentity } from "../../src/graph/types";
 import { VaultContainerFileActions } from "../../src/containers/vault-file-actions";
@@ -32,7 +32,7 @@ const project = (path: string, id: string): CanonicalInput =>
 
 
 /** Build one graph and its diagnostics from canonical inputs. */
-function buildGraph(inputs: readonly CanonicalInput[]): GraphResult {
+function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
     return new GraphBuilder(inputs).build();
 }
 

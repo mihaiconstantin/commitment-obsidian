@@ -30,22 +30,20 @@ export interface ContainerIdentity {
 }
 
 
+/** Stable codes for nonblocking graph findings. */
+export type DiagnosticCode = "unresolved_anchor" | "underfilled_program";
+
+
 /** One nonblocking finding about the graph inputs. */
 export interface Diagnostic {
     /** Stable category code for the finding. */
-    readonly code: string;
+    readonly code: DiagnosticCode;
 
-    /** Readable message naming the affected identifiers and paths. */
+    /** Readable message naming the affected identifiers. */
     readonly message: string;
 
     /** Root-relative vault paths related to the finding. */
     readonly paths: readonly string[];
-
-    /** Actual observed count when the finding compares counts. */
-    readonly actual?: number;
-
-    /** Required count when the finding compares counts. */
-    readonly required?: number;
 }
 
 
@@ -79,17 +77,4 @@ export interface CanonicalInput {
 
     /** Parsed frontmatter as own entries. */
     readonly frontmatter: ReadonlyMap<string, unknown>;
-}
-
-
-/** One pending support anchor awaiting graph membership. */
-export interface PendingSupport {
-    /** Concept level of the anchored identifier. */
-    readonly level: CommitmentLevel;
-
-    /** Exact anchored identifier text. */
-    readonly identifier: string;
-
-    /** Root-relative source path. */
-    readonly path: string;
 }

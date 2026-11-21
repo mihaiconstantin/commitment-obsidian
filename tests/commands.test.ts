@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", async () => await import("./stubs/obsidian"));
 
-import { App, Notice, Setting } from "obsidian";
+import { App, Modal, Notice, Setting } from "obsidian";
 import { CONFIG } from "../src/constants";
 import { SettingsReader } from "../src/settings/settings";
 import type { CommitmentSettings } from "../src/settings/settings";
@@ -55,32 +55,39 @@ function modalTexts(): string[] {
 }
 
 beforeEach(() => {
-    // Reset the recorded notices, settings, and the document body.
+    // Reset the recorded modals, notices, settings, and the document body.
+    Modal.instances = [];
     Notice.instances = [];
     Setting.instances = [];
     document.body.replaceChildren();
 });
 
 describe("commitment graph commands", () => {
-    it("registers exactly the two requested command names", async () => {
+    it("registers exactly the three requested command names", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin } = await createPlugin();
         expect(plugin.commands.map((command) => command.name)).toEqual([
             "View graph",
             "Update graph",
+            "Doctor",
         ]);
         expect(plugin.commands.map((command) => command.id)).toEqual([
             "view-graph",
             "update-graph",
+            "doctor",
         ]);
     });
 
     it("reports the readiness message before the layout is ready", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, vault } = await createPlugin();
-        // Invoke the registered command.
-        await plugin.commands[0]?.callback?.();
+        for (const command of plugin.commands) {
+            // Invoke every registered command before the layout is ready.
+            await command.callback?.();
+        }
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            CONFIG.NOT_READY_MESSAGE,
+            CONFIG.NOT_READY_MESSAGE,
             CONFIG.NOT_READY_MESSAGE,
         ]);
         expect(vault.calls.reads).toEqual([]);
@@ -103,7 +110,7 @@ describe("commitment graph commands", () => {
         expect(vault.files.has(CONFIG.GRAPH_PATH)).toBe(false);
     });
 
-    it("shows warnings separately from the JSON", async () => {
+    it("does not show diagnostics in the graph modal", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app } = await createPlugin({
             "projects/alpha.md": project("alpha"),
@@ -118,8 +125,8 @@ describe("commitment graph commands", () => {
         await plugin.commands[0]?.callback?.();
 
         expect(modalTexts()[0]).not.toContain("missing");
-        expect(document.body.textContent).toContain("Warnings");
-        expect(document.body.textContent).toContain("meetings/missing.md");
+        expect(document.body.textContent).not.toContain("Warnings");
+        expect(document.body.textContent).not.toContain("meetings/missing.md");
     });
 
     it("registers the presentation settings tab", async () => {
@@ -453,7 +460,7 @@ describe("commitment graph commands", () => {
         expect(vault.calls.processes).toEqual([]);
     });
 
-    it("rejects an overlapping command with one busy notice", async () => {
+    it("rejects an overlapping Doctor command with one busy notice", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin();
         // Mark the workspace layout ready.
@@ -471,18 +478,19 @@ describe("commitment graph commands", () => {
         });
 
         const first: unknown = plugin.commands[0]?.callback?.();
-        const second: unknown = plugin.commands[0]?.callback?.();
+        const second: unknown = plugin.commands[2]?.callback?.();
         release();
         await Promise.all([first, second]);
 
-        expect(Notice.instances.map((notice) => notice.message)).toContain(
-            "Graph command already running",
-        );
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            CONFIG.BUSY_MESSAGE,
+        ]);
+        expect(vault.calls.reads).toEqual(["projects/alpha.md"]);
     });
 
-    it("presents update warnings in the modal", async () => {
+    it("reports one issue after update without opening a modal", async () => {
         // Compose the plugin over an in-memory vault.
-        const { plugin, app } = await createPlugin({
+        const { plugin, app, vault } = await createPlugin({
             "projects/alpha.md": project("alpha", "work"),
             "programs/phd.md":
                 "---\ntype: program\nid: phd\narea: work\nstate: active\n---\n",
@@ -493,11 +501,92 @@ describe("commitment graph commands", () => {
         // Invoke the registered command.
         await plugin.commands[1]?.callback?.();
 
-        expect(Notice.instances.map((notice) => notice.message)).toContain(
-            "Graph written",
-        );
-        expect(document.body.textContent).toContain("Warnings");
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Graph written. 1 issue. Run `Commitment: Doctor`.",
+        ]);
+        expect(Modal.instances).toHaveLength(0);
+        expect(vault.files.has(CONFIG.GRAPH_PATH)).toBe(true);
+    });
+
+    it("reports multiple issues after an unchanged update", async () => {
+        // Compose the plugin over two underfilled program containers.
+        const { plugin, app } = await createPlugin({
+            "programs/phd.md":
+                "---\ntype: program\nid: phd\narea: work\nstate: active\n---\n",
+            "programs/ml.md":
+                "---\ntype: program\nid: ml\narea: work\nstate: active\n---\n",
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Write the first projection so the second update stays unchanged.
+        await plugin.commands[1]?.callback?.();
+        Notice.instances = [];
+
+        // Invoke the update command again.
+        await plugin.commands[1]?.callback?.();
+
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Graph unchanged. 2 issues. Run `Commitment: Doctor`.",
+        ]);
+        expect(Modal.instances).toHaveLength(0);
+    });
+
+    it("opens the Doctor with the current findings", async () => {
+        // Compose the plugin over an in-memory vault with one underfilled program.
+        const { plugin, app, vault } = await createPlugin({
+            "projects/alpha.md": project("alpha", "work"),
+            "programs/phd.md":
+                "---\ntype: program\nid: phd\narea: work\nstate: active\n---\n",
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        // Require the grouped issue and its source action.
+        expect(Modal.instances).toHaveLength(1);
+        expect(Modal.instances[0]?.titleEl.textContent).toBe(CONFIG.DOCTOR_TITLE);
+        expect(document.body.textContent).toContain("Underfilled programs");
         expect(document.body.textContent).toContain("Program `phd`");
+        expect(document.body.textContent).toContain("programs/phd.md");
+        expect(document.querySelector(".cd-path")).not.toBeNull();
+
+        // Require the Doctor to write nothing.
+        expect(vault.calls.creates).toEqual([]);
+        expect(vault.calls.processes).toEqual([]);
+    });
+
+    it("opens the Doctor in the healthy state", async () => {
+        // Compose the plugin over an in-memory vault.
+        const { plugin, app } = await createPlugin();
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        expect(Modal.instances).toHaveLength(1);
+        expect(Modal.instances[0]?.titleEl.textContent).toBe(CONFIG.DOCTOR_TITLE);
+        expect(document.body.textContent).toContain("No issues found.");
+    });
+
+    it("reports a blocking error from the Doctor without a modal", async () => {
+        // Compose the plugin over an in-memory vault with a missing identifier.
+        const { plugin, app } = await createPlugin({
+            "projects/alpha.md": "---\ntype: project\narea: work\n---\n",
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        expect(Modal.instances).toHaveLength(0);
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Project `projects/alpha.md` is missing `id`.",
+        ]);
     });
 
     it("does not write markdown during update", async () => {

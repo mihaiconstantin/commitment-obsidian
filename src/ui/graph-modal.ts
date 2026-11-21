@@ -11,7 +11,7 @@ import { Modal, Notice, type App } from "obsidian";
 import { CONFIG } from "../constants";
 import type { ContainerFileActions } from "../containers/container-file-actions";
 import { VaultContainerFileActions } from "../containers/vault-file-actions";
-import type { GraphResult } from "../graph/commitment-graph";
+import type { CommitmentGraph } from "../graph/commitment-graph";
 import type { GraphArea } from "../graph/types";
 import { orderAreas } from "../helpers/area-order";
 import { describeFailure } from "../helpers/utils";
@@ -25,8 +25,8 @@ import { GraphTree } from "./graph-tree";
 
 /** Modal showing one derived graph. */
 export class GraphModal extends Modal {
-    /** Graph snapshot and its nonblocking findings. */
-    private readonly result: GraphResult;
+    /** Graph snapshot shown by this modal. */
+    private readonly graph: CommitmentGraph;
 
     /** Shape and area order used to present the graph. */
     private readonly presentation: PresentationSettings;
@@ -53,7 +53,7 @@ export class GraphModal extends Modal {
         // Build the vault adapter for this graph and the current settings.
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             this.app,
-            this.result.graph,
+            this.graph,
             (kind) => this.creation()[kind],
             () => this.creation().idStyle,
         );
@@ -78,7 +78,7 @@ export class GraphModal extends Modal {
         // Mount the interactive tree in the configured area order.
         const tree: GraphTree = new GraphTree(
             host,
-            this.result.graph.getAreas(),
+            this.graph.getAreas(),
             this.presentation.sort,
             actions,
             this.appearance,
@@ -100,45 +100,10 @@ export class GraphModal extends Modal {
         });
     }
 
-    /** Add the warnings heading and entries when the build reported any. */
-    private renderWarnings(content: HTMLElement): void {
-        // Add nothing without findings.
-        if (this.result.diagnostics.length === 0) {
-            // Leave the graph content without a warnings section.
-            return;
-        }
-
-        // Add a warnings heading below the graph.
-        content.createEl("h3", {
-            text: "Warnings",
-            cls: "commitment-graph__warnings-title",
-        });
-
-        // List each warning with its affected paths.
-        const list: HTMLElement = content.createEl("ul", {
-            cls: "commitment-graph__warnings",
-        });
-        for (const diagnostic of this.result.diagnostics) {
-            // Render the warning message and its paths as text.
-            const item: HTMLElement = list.createEl("li", {
-                text: diagnostic.message,
-            });
-
-            // Add the paths when present.
-            if (diagnostic.paths.length > 0) {
-                // Render the source paths as a separate line.
-                item.createEl("div", {
-                    text: diagnostic.paths.join(", "),
-                    cls: "commitment-graph__paths",
-                });
-            }
-        }
-    }
-
     /** Construct the modal without touching the DOM. */
     public constructor(
         app: App,
-        result: GraphResult,
+        graph: CommitmentGraph,
         presentation: PresentationSettings,
         appearance: AppearanceSettings,
         creation: () => CommitmentCreationSettings,
@@ -146,7 +111,7 @@ export class GraphModal extends Modal {
     ) {
         // Initialize the Obsidian modal and retain its inputs.
         super(app);
-        this.result = result;
+        this.graph = graph;
         this.presentation = presentation;
         this.appearance = appearance;
         this.creation = creation;
@@ -178,16 +143,13 @@ export class GraphModal extends Modal {
 
             // Order a copy of the graph areas for this presentation.
             const orderedAreas: readonly GraphArea[] = orderAreas(
-                this.result.graph.getAreas(),
+                this.graph.getAreas(),
                 this.presentation.sort,
             );
 
             // Serialize that ordered list through the graph's projection format.
-            block.setText(this.result.graph.toJson(orderedAreas));
+            block.setText(this.graph.toJson(orderedAreas));
         }
-
-        // Add the warnings when the build reported any.
-        this.renderWarnings(content);
     }
 
     /** Release the rendered content when Obsidian closes the modal. */

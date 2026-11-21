@@ -84,15 +84,19 @@ export const CONFIG = {
     /** Command names registered under the `Commitment` plugin name. */
     VIEW_COMMAND: "View graph",
     UPDATE_COMMAND: "Update graph",
+    DOCTOR_COMMAND: "Doctor",
 
     /** Readiness message shown before the workspace has finished loading. */
     NOT_READY_MESSAGE: "Vault is still loading",
 
-    /** Busy message shown when one graph command is already running. */
-    BUSY_MESSAGE: "Graph command already running",
+    /** Busy message shown when one commitment command is already running. */
+    BUSY_MESSAGE: "Commitment command already running",
 
     /** Readable graph modal title. */
     GRAPH_TITLE: "Commitment Graph",
+
+    /** Readable Doctor modal title. */
+    DOCTOR_TITLE: "Commitment Doctor",
 
     /** Labels used by the tree chrome. */
     SEARCH_PLACEHOLDER: "Filter areas, programs, and projects",

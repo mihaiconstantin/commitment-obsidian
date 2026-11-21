@@ -9,6 +9,7 @@
 import { isMap, parseDocument, type Document } from "yaml";
 
 import type { ContainerIdentity } from "../graph/types";
+import { isValidIdentifier } from "../helpers/strings";
 
 
 /** Format one moment token sequence for the current moment. */
@@ -27,12 +28,6 @@ interface TemplateParts {
 
 /** Compose container documents from a template and its identity. */
 export class ContainerDocumentComposer {
-    /** Return whether one value is a non-empty exact identifier string. */
-    private isValidIdentifier(value: unknown): value is string {
-        // Reject non-text, empty, and padded values without normalizing.
-        return typeof value === "string" && value !== "" && value === value.trim();
-    }
-
     /** Reject an identity that the graph would not accept as a container. */
     private validateIdentity(identity: ContainerIdentity): void {
         // Reject a kind outside the three supported container levels.
@@ -42,13 +37,13 @@ export class ContainerDocumentComposer {
         }
 
         // Reject an absent, empty, or padded identifier.
-        if (!this.isValidIdentifier(identity.id)) {
+        if (!isValidIdentifier(identity.id)) {
             // Report the invalid identifier.
             throw new Error(`invalid value \`${String(identity.id)}\` for \`id\``);
         }
 
         // Reject an absent, empty, or padded owning area.
-        if (!this.isValidIdentifier(identity.area)) {
+        if (!isValidIdentifier(identity.area)) {
             // Report the invalid owning area.
             throw new Error(`invalid value \`${String(identity.area)}\` for \`area\``);
         }
@@ -57,7 +52,7 @@ export class ContainerDocumentComposer {
         if (
             identity.kind === "project"
             && identity.program !== null
-            && !this.isValidIdentifier(identity.program)
+            && !isValidIdentifier(identity.program)
         ) {
             // Report the invalid enclosing program.
             throw new Error(`invalid value \`${String(identity.program)}\` for \`program\``);
@@ -157,7 +152,7 @@ export class ContainerDocumentComposer {
         const program: unknown = values instanceof Map ? values.get("program") : undefined;
 
         // Accept an absent program or a valid identifier.
-        if (program === null || program === undefined || this.isValidIdentifier(program)) {
+        if (program === null || program === undefined || isValidIdentifier(program)) {
             // Leave valid project documents unchanged.
             return;
         }

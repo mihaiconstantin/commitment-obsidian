@@ -16,6 +16,7 @@ import { ContainerDocumentComposer } from "./container-document";
 import type { ContainerFileActions, ContainerFileAction } from "./container-file-actions";
 import { ContainerPathBuilder } from "./container-path";
 import type { IdStyle } from "./file-name";
+import { VaultFileOpener, type VaultFileOpenResult } from "./vault-file-opener";
 
 
 /** Open existing container files and create implicit ones. */
@@ -35,23 +36,23 @@ export class VaultContainerFileActions implements ContainerFileActions {
     /** Composer for new container documents. */
     private readonly composer: ContainerDocumentComposer;
 
+    /** Shared policy for resolving and opening a vault path. */
+    private readonly opener: VaultFileOpener;
+
     /** Open one indexed container source file. */
     private async openIndexed(path: string): Promise<void> {
-        // Require the indexed path to still resolve.
-        const entry: TAbstractFile | null = this.app.vault.getAbstractFileByPath(path);
-        if (entry === null) {
+        // Resolve and open the indexed path through the shared policy.
+        const result: VaultFileOpenResult = await this.opener.open(path);
+        if (result === "missing") {
             // Report the vanished indexed container.
             throw new Error(`Indexed file \`${path}\` is missing.`);
         }
 
-        // Require the indexed path to still be an ordinary file.
-        if (!(entry instanceof TFile)) {
+        // Reject an indexed path that became a folder.
+        if (result === "not-file") {
             // Report the unsupported indexed shape.
             throw new Error(`Indexed path \`${path}\` is not a file.`);
         }
-
-        // Open the indexed file in the main workspace.
-        await this.app.workspace.getLeaf(false).openFile(entry);
     }
 
     /** Read the configured template and compose the target document. */
@@ -170,6 +171,9 @@ export class VaultContainerFileActions implements ContainerFileActions {
 
         // Create the composer for new container documents.
         this.composer = new ContainerDocumentComposer();
+
+        // Create the shared opener for indexed container files.
+        this.opener = new VaultFileOpener(app);
     }
 
     /** Return whether the row opens an indexed file or creates one. */

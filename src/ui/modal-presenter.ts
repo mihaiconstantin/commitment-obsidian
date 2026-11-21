@@ -7,18 +7,17 @@
 import type { App } from "obsidian";
 
 import { CONFIG } from "../constants";
-import type { GraphResult } from "../graph/commitment-graph";
+import type { CommitmentGraph } from "../graph/commitment-graph";
 import type {
     AppearanceSettings,
     CommitmentCreationSettings,
     PresentationSettings,
 } from "../settings/settings";
 import { GraphModal } from "./graph-modal";
-import type { GraphPresenter } from "./presenter";
 
 
 /** Present the graph in the standard modal as scrollable text or a tree. */
-export class ModalGraphPresenter implements GraphPresenter {
+export class ModalGraphPresenter {
     /** App used to open the modal. */
     private readonly app: App;
 
@@ -43,8 +42,8 @@ export class ModalGraphPresenter implements GraphPresenter {
         this.appearance = appearance;
     }
 
-    /** Display one graph and its warnings in a modal. */
-    public show(result: GraphResult, presentation: PresentationSettings): void {
+    /** Display one graph in a modal. */
+    public show(graph: CommitmentGraph, presentation: PresentationSettings): void {
         // Close the previous modal so only one presentation is open.
         this.modal?.close();
         this.modal = null;
@@ -52,7 +51,7 @@ export class ModalGraphPresenter implements GraphPresenter {
         // Create the modal and drop the reference once it releases its content.
         const modal: GraphModal = new GraphModal(
             this.app,
-            result,
+            graph,
             presentation,
             this.appearance(),
             this.creation,
