@@ -156,7 +156,7 @@ export class GraphModal extends Modal {
     /** Build the modal body when Obsidian opens it. */
     public override onOpen(): void {
         // Identify the modal and size it for the tree.
-        this.setTitle(CONFIG.TITLE);
+        this.setTitle(CONFIG.GRAPH_TITLE);
         if (this.presentation.mode === "tree") {
             // Add the tree sizing classes.
             this.modalEl.classList.add("commitment-graph-modal", "mod-lg");

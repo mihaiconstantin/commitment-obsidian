@@ -91,8 +91,8 @@ export const CONFIG = {
     /** Busy message shown when one graph command is already running. */
     BUSY_MESSAGE: "Graph command already running",
 
-    /** Readable modal title. */
-    TITLE: "Commitment Graph",
+    /** Readable graph modal title. */
+    GRAPH_TITLE: "Commitment Graph",
 
     /** Labels used by the tree chrome. */
     SEARCH_PLACEHOLDER: "Filter areas, programs, and projects",
