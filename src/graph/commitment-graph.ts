@@ -102,11 +102,15 @@ export class CommitmentGraph {
         return this.areas;
     }
 
-    /** Serialize the direct projection with four-space indentation. */
-    public toJson(): string {
+    /**
+     * Serialize one ordered area list as the direct projection.
+     *
+     * The stored canonical order is the default.
+     */
+    public toJson(areas: readonly GraphArea[] = this.areas): string {
         // Use a null prototype so `__proto__` remains an ordinary area key.
         const projection: Record<string, ProjectedArea> = Object.create(null);
-        for (const area of this.areas) {
+        for (const area of areas) {
             // Use a null prototype so `__proto__` remains an ordinary program key.
             const programs: Record<string, ProjectedProgram> = Object.create(null);
             for (const program of area.programs) {

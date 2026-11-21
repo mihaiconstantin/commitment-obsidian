@@ -12,6 +12,7 @@ import { Notice, setIcon } from "obsidian";
 import { CONFIG } from "../constants";
 import type { ContainerFileAction, ContainerFileActions } from "../containers/container-file-actions";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
+import type { GraphSort } from "../settings/settings";
 import { TreeModel } from "./tree-model";
 import type { AreaView } from "./tree-model";
 
@@ -73,10 +74,11 @@ interface AreaElements {
 /**
  * Interactive tree of areas, programs, and projects.
  *
- * `TreeModel` owns the active query, order, and totals. The class owns the
- * toolbar and list elements, the row markup, filtering, the copy notice, and
- * the single in-flight file action. Areas and programs fold natively, so the
- * tree builds its rows once and only hides or reorders them afterwards.
+ * `TreeModel` owns the active query, the configured order, and totals. The
+ * class owns the toolbar and list elements, the row markup, filtering, the copy
+ * notice, and the single in-flight file action. Areas and programs fold
+ * natively, so the tree builds its rows once in display order and only hides
+ * them afterwards.
  */
 export class GraphTree {
     /** File action seam, or null when the surface offers no file actions. */
@@ -91,9 +93,6 @@ export class GraphTree {
     /** Query field that drives filtering. */
     private readonly input: HTMLInputElement;
 
-    /** Sort order control. */
-    private readonly sortSelect: HTMLSelectElement;
-
     /** Control that expands or collapses every entry. */
     private readonly toggleAll: HTMLButtonElement;
 
@@ -106,11 +105,8 @@ export class GraphTree {
     /** Empty-result message toggled by filtering. */
     private readonly empty: HTMLElement;
 
-    /** Built area elements in their initial order. */
+    /** Built area elements in display order. */
     private readonly areaElements: AreaElements[] = [];
-
-    /** Built area elements by identifier, used when reordering. */
-    private readonly areaIndex: Map<string, AreaElements> = new Map<string, AreaElements>();
 
     /** Open state captured when a query starts, or null outside a query. */
     private openSnapshot: Map<HTMLDetailsElement, boolean> | null = null;
@@ -131,27 +127,13 @@ export class GraphTree {
         this.search.append(searchIcon, this.input);
         this.search.createEl("kbd", { cls: "cg-kbd", text: "/" });
 
-        // Build the sort control with both offered orders.
-        this.sortSelect.className = "cg-select";
-        this.sortSelect.setAttribute("aria-label", "Sort areas");
-        const sortCount: HTMLOptionElement = document.createElement("option");
-        sortCount.value = "count";
-        sortCount.textContent = "Largest first";
-        const sortName: HTMLOptionElement = document.createElement("option");
-        sortName.value = "name";
-        sortName.textContent = "A–Z";
-        this.sortSelect.append(sortCount, sortName);
-
-        // Apply the current order to the control.
-        this.sortSelect.value = this.model.getSort();
-
         // Build the single control that expands or collapses every entry.
         this.toggleAll.type = "button";
         this.toggleAll.className = "cg-btn cg-toggle";
 
         // Build the tools row.
         const tools: HTMLElement = container.createDiv({ cls: "cg-tools" });
-        tools.append(this.search, this.sortSelect, this.toggleAll);
+        tools.append(this.search, this.toggleAll);
 
         // Mark the stats line as a live status region.
         this.stats.setAttribute("role", "status");
@@ -159,24 +141,17 @@ export class GraphTree {
         // Build the footer gutter that keeps the list clear of the modal edge.
         const gutter: HTMLElement = container.createDiv({ cls: "cg-gutter" });
 
-        // Assemble the tree chrome in the prototype order.
+        // Assemble the toolbar, stats line, scrolling list, and gutter.
         container.append(tools, this.stats, this.list, gutter);
     }
 
-    /** Bind the filter, sort, and expand controls. */
+    /** Bind the filter and expand controls. */
     private bindControls(): void {
         // Filter as soon as the query changes.
         this.input.addEventListener("input", (): void => {
             // Read the latest trimmed query and apply it immediately.
             this.model.setQuery(this.input.value.trim());
             this.applyFilter();
-        });
-
-        // Re-order the existing area rows when the sort changes.
-        this.sortSelect.addEventListener("change", (): void => {
-            // Read and remember the selected order.
-            this.model.setSort(this.sortSelect.value === "name" ? "name" : "count");
-            this.applySort();
         });
 
         // Expand everything, or collapse everything when already open.
@@ -479,12 +454,11 @@ export class GraphTree {
 
     /** Build every area and program once and append the empty message. */
     private buildAreas(): void {
-        // Build the areas in the initial order.
+        // Build the areas in the configured display order.
         for (const area of this.model.orderedAreas()) {
             // Build and retain the area boundary.
             const elements: AreaElements = this.buildArea(area);
             this.areaElements.push(elements);
-            this.areaIndex.set(area.id, elements);
             this.list.append(elements.details);
         }
 
@@ -505,19 +479,6 @@ export class GraphTree {
     private allExpanded(): boolean {
         // Report whether every details element is open.
         return this.details().every((details) => details.open);
-    }
-
-    /** Reorder the existing area details without rebuilding them. */
-    private applySort(): void {
-        // Collect the built area elements in the selected order.
-        const ordered: HTMLDetailsElement[] = this.model.orderedAreas().flatMap((area) => {
-            // Read the built elements for the area.
-            const elements: AreaElements | undefined = this.areaIndex.get(area.id);
-            return elements === undefined ? [] : [elements.details];
-        });
-
-        // Move the existing areas and keep the empty message last.
-        this.list.append(...ordered, this.empty);
     }
 
     /** Capture the open state before a query forces rows open. */
@@ -724,18 +685,22 @@ export class GraphTree {
     }
 
     /** Construct and mount one tree inside the supplied container. */
-    public constructor(container: HTMLElement, areas: readonly GraphArea[], actions: ContainerFileActions | null) {
-        // Store the file action seam and the tree model.
+    public constructor(
+        container: HTMLElement,
+        areas: readonly GraphArea[],
+        sort: GraphSort,
+        actions: ContainerFileActions | null,
+    ) {
+        // Store the file action seam and the ordered tree model.
         this.actions = actions;
-        this.model = new TreeModel(areas);
+        this.model = new TreeModel(areas, sort);
 
         // Clear any previous content.
         container.replaceChildren();
 
-        // Build the search field, sort choice, stats line, and list.
+        // Build the search field, stats line, and list.
         this.search = container.createDiv({ cls: "cg-search" });
         this.input = document.createElement("input");
-        this.sortSelect = document.createElement("select");
         this.toggleAll = document.createElement("button");
         this.stats = container.createEl("p", { cls: "cg-stats" });
         this.list = container.createDiv({ cls: "cg-list" });

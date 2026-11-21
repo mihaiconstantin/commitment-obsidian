@@ -7,10 +7,8 @@
  */
 
 import type { GraphArea, GraphProgram } from "../graph/types";
-
-
-/** Sort orders offered by the toolbar. */
-export type TreeSort = "count" | "name";
+import type { GraphSort } from "../settings/settings";
+import { countAreaProjects, orderAreas } from "./area-order";
 
 
 /** One area reduced to the part that survives the active query. */
@@ -32,13 +30,16 @@ export interface AreaView {
 /**
  * Interactive tree state for areas, programs, and projects.
  *
- * One model lives with each mounted tree and owns the active query, the sort
- * order, and the display totals. Rendering reads the model; only the tree class
- * creates elements and registers listeners.
+ * One model lives with each mounted tree and owns the active query, the
+ * configured area order, and the display totals. Rendering reads the model;
+ * only the tree class creates elements and registers listeners.
  */
 export class TreeModel {
-    /** Areas shown by this tree, in graph order. */
+    /** Areas available to this tree in canonical order. */
     private readonly areas: readonly GraphArea[];
+
+    /** Configured area display order. */
+    private readonly sort: GraphSort;
 
     /** Total project count across every area. */
     private readonly totalProjects: number;
@@ -52,19 +53,17 @@ export class TreeModel {
     /** Active filter query. */
     private query: string = "";
 
-    /** Active sort order. */
-    private sort: TreeSort = "count";
-
     /** Report whether one identifier matches the active query. */
     private matches(text: string): boolean {
         // Require every entry when no query is active.
         return this.query === "" || text.toLowerCase().includes(this.query.toLowerCase());
     }
 
-    /** Read the graph areas and their totals. */
-    public constructor(areas: readonly GraphArea[]) {
-        // Store the data for every later view.
+    /** Read the graph areas, their order, and their totals. */
+    public constructor(areas: readonly GraphArea[], sort: GraphSort) {
+        // Store the data and order for every later view.
         this.areas = areas;
+        this.sort = sort;
 
         // Read the display totals once for the stats line and the meters.
         this.totalProjects = areas.reduce(
@@ -81,18 +80,6 @@ export class TreeModel {
         );
     }
 
-    /** Return the active sort order. */
-    public getSort(): TreeSort {
-        // Report the selected order.
-        return this.sort;
-    }
-
-    /** Replace the active sort order. */
-    public setSort(sort: TreeSort): void {
-        // Keep the selected order for this view.
-        this.sort = sort;
-    }
-
     /** Replace the active filter query. */
     public setQuery(query: string): void {
         // Store the latest query.
@@ -105,25 +92,10 @@ export class TreeModel {
         return this.query;
     }
 
-    /** Return the areas ordered for display. */
+    /** Return the graph areas in the configured display order. */
     public orderedAreas(): readonly GraphArea[] {
-        // Copy the areas before sorting.
-        const ordered: GraphArea[] = [...this.areas];
-
-        // Sort by identifier or by descending size.
-        ordered.sort((left: GraphArea, right: GraphArea): number => {
-            // Use the identifier order when requested.
-            if (this.sort === "name") {
-                // Compare the identifiers.
-                return left.id.localeCompare(right.id);
-            }
-
-            // Compare by size, then by identifier for a stable order.
-            return this.countArea(right) - this.countArea(left) || left.id.localeCompare(right.id);
-        });
-
-        // Return the ordered areas.
-        return ordered;
+        // Apply the configured order to the stored graph areas.
+        return orderAreas(this.areas, this.sort);
     }
 
     /** Return the part of one area that survives the active query. */
@@ -183,17 +155,8 @@ export class TreeModel {
 
     /** Return an area's direct and program project count. */
     public countArea(area: GraphArea): number {
-        // Count the direct projects.
-        let total: number = area.projects.length;
-
-        // Add each program's coordinated projects.
-        for (const program of area.programs) {
-            // Add the coordinated count.
-            total += program.projects.length;
-        }
-
-        // Return the area total.
-        return total;
+        // Delegate the shared project count.
+        return countAreaProjects(area);
     }
 
     /** Return the total project count across every area. */

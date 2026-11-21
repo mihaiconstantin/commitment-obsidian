@@ -37,7 +37,6 @@
 
 .commitment-graph__tree-host .cg-tools {
     display: flex;
-    flex-wrap: wrap;
     gap: 7px;
     align-items: center;
     padding: 0px 0 0;
@@ -99,7 +98,6 @@
     background: transparent;
 }
 
-.commitment-graph__tree-host .cg-select,
 .commitment-graph__tree-host .cg-btn {
     font: inherit;
     font-size: 11.5px;
@@ -116,8 +114,7 @@
     line-height: 1.45;
 }
 
-.commitment-graph__tree-host .cg-btn:hover,
-.commitment-graph__tree-host .cg-select:hover {
+.commitment-graph__tree-host .cg-btn:hover {
     border-color: var(--cg-muted);
 }
 
@@ -410,16 +407,6 @@
     .commitment-graph__tree-host .cg-stats {
         font-size: 10px;
     }
-
-    /* Give the search field its own row so the controls share the next one. */
-    .commitment-graph__tree-host .cg-search {
-        flex: 1 1 100%;
-    }
-
-    .commitment-graph__tree-host .cg-toggle {
-        width: 33px;
-        padding: 7px 0;
-    }
 }
 
 /* Size the tree modal directly; Obsidian has no `mod-lg` dialog class. */
@@ -434,11 +421,12 @@ body:not(.is-mobile) .modal.commitment-graph-modal {
     height: 88vh;
 }
 
-/* Keep the modal content full height so the list scrolls, not the modal. */
+/* Keep the modal content full height so the list scrolls, not the modal.
+   Leave overflow visible so the search focus ring is not clipped. */
 .modal.commitment-graph-modal .modal-content {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    min-height: 0;
     padding-bottom: 0;
 }
 

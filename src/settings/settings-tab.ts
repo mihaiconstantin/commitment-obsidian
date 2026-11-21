@@ -17,6 +17,7 @@ import type { CommitmentLevel } from "../graph/types";
 import type {
     CommitmentSettings,
     ContainerCreationSettings,
+    GraphSort,
     PresentationMode,
 } from "./settings";
 
@@ -137,10 +138,44 @@ export class CommitmentSettingTab extends PluginSettingTab {
                 dropdown.onChange((value: string): void => {
                     // Persist only a mode defined by the shared map.
                     if (Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value)) {
-                        // Save the selected mode with the creation settings intact.
+                        // Save the selected mode with the order and creation settings intact.
                         void this.host.saveSettings({
                             ...this.host.settings,
-                            presentation: { mode: value as PresentationMode },
+                            presentation: {
+                                ...this.host.settings.presentation,
+                                mode: value as PresentationMode,
+                            },
+                        });
+                    }
+                });
+            });
+    }
+
+    /** Render the graph area order choice. */
+    private sortSetting(container: HTMLElement): void {
+        // Create the sort setting.
+        new Setting(container)
+            .setName("Graph order")
+            .setDesc("Order areas in every graph view.")
+            .addDropdown((dropdown: DropdownComponent): void => {
+                // Offer every supported order with its readable label.
+                for (const sort of Object.keys(CONFIG.GRAPH_SORTS) as GraphSort[]) {
+                    // Add the order with its readable label.
+                    dropdown.addOption(sort, CONFIG.GRAPH_SORTS[sort]);
+                }
+
+                // Select the stored order and persist a change.
+                dropdown.setValue(this.host.settings.presentation.sort);
+                dropdown.onChange((value: string): void => {
+                    // Persist only an order defined by the shared map.
+                    if (Object.prototype.hasOwnProperty.call(CONFIG.GRAPH_SORTS, value)) {
+                        // Save the selected order with the mode and creation settings intact.
+                        void this.host.saveSettings({
+                            ...this.host.settings,
+                            presentation: {
+                                ...this.host.settings.presentation,
+                                sort: value as GraphSort,
+                            },
                         });
                     }
                 });
@@ -217,6 +252,7 @@ export class CommitmentSettingTab extends PluginSettingTab {
         // Render the plugin-wide choices.
         this.heading(container, "General");
         this.presentationSetting(container);
+        this.sortSetting(container);
         this.styleSetting(container);
 
         // Add the three creation fields for every container kind.

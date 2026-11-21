@@ -7,7 +7,7 @@
 import type { App } from "obsidian";
 
 import type { GraphResult } from "../graph/commitment-graph";
-import type { CommitmentCreationSettings, PresentationMode } from "../settings/settings";
+import type { CommitmentCreationSettings, PresentationSettings } from "../settings/settings";
 import { GraphModal } from "./graph-modal";
 import type { GraphPresenter } from "./presenter";
 
@@ -31,7 +31,7 @@ export class ModalGraphPresenter implements GraphPresenter {
     }
 
     /** Display one graph and its warnings in a modal. */
-    public show(result: GraphResult, mode: PresentationMode): void {
+    public show(result: GraphResult, presentation: PresentationSettings): void {
         // Close the previous modal so only one presentation is open.
         this.modal?.close();
         this.modal = null;
@@ -40,7 +40,7 @@ export class ModalGraphPresenter implements GraphPresenter {
         const modal: GraphModal = new GraphModal(
             this.app,
             result,
-            mode,
+            presentation,
             this.creation,
             (): void => {
                 // Forget the released modal when it is still the current one.

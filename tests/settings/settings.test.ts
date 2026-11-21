@@ -20,7 +20,7 @@ describe("commitment settings", () => {
     it("loads the nested presentation and creation shape", () => {
         // Read a complete nested value.
         const settings: CommitmentSettings = reader.read({
-            presentation: { mode: "tree" },
+            presentation: { mode: "tree", sort: "count" },
             creation: {
                 idStyle: "none",
                 area: {
@@ -43,7 +43,7 @@ describe("commitment settings", () => {
 
         // Require the nested values unchanged.
         expect(settings).toEqual({
-            presentation: { mode: "tree" },
+            presentation: { mode: "tree", sort: "count" },
             creation: {
                 idStyle: "none",
                 area: {
@@ -256,13 +256,21 @@ describe("commitment settings", () => {
         });
     });
 
-    it("ignores an unsupported nested presentation mode", () => {
-        // Require the tree mode to load unchanged.
-        expect(reader.read({ presentation: { mode: "tree" } }).presentation.mode).toBe("tree");
+    it("ignores unsupported nested presentation values", () => {
+        // Require the supported mode and order to load unchanged.
+        const stored: CommitmentSettings = reader.read({
+            presentation: { mode: "tree", sort: "count" },
+        });
+        expect(stored.presentation).toEqual({ mode: "tree", sort: "count" });
 
         // Require unknown and malformed nested modes to fall back to JSON.
         expect(reader.read({ presentation: { mode: "xml" } }).presentation.mode).toBe("json");
         expect(reader.read({ presentation: { mode: 1 } }).presentation.mode).toBe("json");
         expect(reader.read({ presentation: { mode: null } }).presentation.mode).toBe("json");
+
+        // Require unknown and malformed sorts to fall back to name order.
+        expect(reader.read({ presentation: { sort: "largest" } }).presentation.sort).toBe("name");
+        expect(reader.read({ presentation: { sort: 1 } }).presentation.sort).toBe("name");
+        expect(reader.read({ presentation: { sort: null } }).presentation.sort).toBe("name");
     });
 });

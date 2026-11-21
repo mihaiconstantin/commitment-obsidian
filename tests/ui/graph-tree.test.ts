@@ -5,6 +5,7 @@ import { Notice } from "obsidian";
 import { GraphTree } from "../../src/ui/graph-tree";
 import type { ContainerFileActions } from "../../src/containers/container-file-actions";
 import type { GraphArea } from "../../src/graph/types";
+import type { GraphSort } from "../../src/settings/settings";
 
 
 const AREAS: readonly GraphArea[] = [
@@ -17,6 +18,7 @@ const AREAS: readonly GraphArea[] = [
 function mount(
     areas: readonly GraphArea[] = AREAS,
     actions: ContainerFileActions | null = null,
+    sort: GraphSort = "count",
 ): { host: HTMLElement; tree: GraphTree } {
     // Create the host element.
     const host: HTMLElement = document.createElement("div");
@@ -25,7 +27,7 @@ function mount(
     document.body.append(host);
 
     // Mount the tree and return its boundary.
-    return { host, tree: new GraphTree(host, areas, actions) };
+    return { host, tree: new GraphTree(host, areas, sort, actions) };
 }
 
 
@@ -132,18 +134,6 @@ describe("graph tree", () => {
         expect(host.querySelector(".cg-chev svg")?.getAttribute("data-icon")).toBe("chevron-down");
         expect(host.querySelector(".cg-kbd")?.textContent).toBe("/");
 
-        // Require the sort control to offer both orders and start by count.
-        const select: HTMLSelectElement = host.querySelector(".cg-select") as HTMLSelectElement;
-        expect(select.value).toBe("count");
-        expect(Array.from(select.options, (option: HTMLOptionElement): string => option.value)).toEqual([
-            "count",
-            "name",
-        ]);
-        expect(Array.from(select.options, (option: HTMLOptionElement): string => option.textContent)).toEqual([
-            "Largest first",
-            "A–Z",
-        ]);
-
         // Require the expand control to start with the collapse action.
         const toggle: HTMLElement = host.querySelector(".cg-toggle") as HTMLElement;
         expect(toggle.getAttribute("aria-label")).toBe("Collapse all");
@@ -157,7 +147,7 @@ describe("graph tree", () => {
         expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(true);
     });
 
-    it("starts with every area and program expanded and the largest area first", () => {
+    it("starts with every area and program expanded in count order", () => {
         // Mount the tree.
         const { host } = mount();
 
@@ -171,8 +161,19 @@ describe("graph tree", () => {
         expect(summary(areaDetails(host, "home")).getAttribute("aria-label")).toBe("home");
         expect(summary(programDetails(host)).getAttribute("aria-label")).toBe("phd");
 
-        // Require the largest area and all of its contents first.
+        // Require the largest area first with all contents visible.
         expect(rowTexts(host)).toEqual(["work", "alpha", "beta", "phd", "gamma", "home", "chores"]);
+    });
+
+    it("orders areas by identifier when name order is configured", () => {
+        // Mount the same areas in name order.
+        const { host } = mount(AREAS, null, "name");
+
+        // Require the alphabetical area order.
+        expect(Array.from(
+            host.querySelectorAll("details.cg-row[data-cg-key^='area:'] > summary .cg-node .cg-nm"),
+            (node: Element): string => node.textContent ?? "",
+        )).toEqual(["home", "work"]);
     });
 
     it("folds and reopens an area through its native summary", () => {
@@ -403,49 +404,6 @@ describe("graph tree", () => {
         expect(program.open).toBe(false);
         expect(work.hidden).toBe(false);
         expect(home.hidden).toBe(false);
-    });
-
-    it("reorders existing area details without losing their native open state", () => {
-        // Mount the tree.
-        const { host } = mount();
-        const work: HTMLDetailsElement = areaDetails(host, "work");
-        const home: HTMLDetailsElement = areaDetails(host, "home");
-        const program: HTMLDetailsElement = programDetails(host);
-
-        // Fold one program and one area.
-        summary(program).click();
-        summary(work).click();
-
-        // Select the identifier order.
-        const select: HTMLSelectElement = host.querySelector(".cg-select") as HTMLSelectElement;
-        select.value = "name";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-
-        // Require the same elements in the new order with the same fold state.
-        expect(areaDetails(host, "work")).toBe(work);
-        expect(areaDetails(host, "home")).toBe(home);
-        expect(work.open).toBe(false);
-        expect(home.open).toBe(true);
-        expect(program.open).toBe(false);
-        expect(Array.from(
-            host.querySelectorAll("details.cg-row[data-cg-key^='area:'] > summary .cg-node .cg-nm"),
-            (node: Element): string => node.textContent ?? "",
-        )).toEqual(["home", "work"]);
-    });
-
-    it("starts each mount in count order without remembered sorting", () => {
-        // Sort the first tree by identifier.
-        const first = mount();
-        const select: HTMLSelectElement = first.host.querySelector(".cg-select") as HTMLSelectElement;
-        select.value = "name";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-        expect(rowTexts(first.host)[0]).toBe("home");
-
-        // Mount a second tree and require the default order again.
-        const second = mount();
-        const secondSelect: HTMLSelectElement = second.host.querySelector(".cg-select") as HTMLSelectElement;
-        expect(secondSelect.value).toBe("count");
-        expect(rowTexts(second.host)[0]).toBe("work");
     });
 
     it("copies an identifier and reports success through a Notice", async () => {

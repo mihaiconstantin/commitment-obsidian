@@ -54,7 +54,7 @@ export default class CommitmentPlugin extends Plugin {
             const result: GraphResult = new GraphBuilder(inputs).build();
 
             // Display the graph and its warnings without writing.
-            this.presenter.show(result, this.settings.presentation.mode);
+            this.presenter.show(result, this.settings.presentation);
         } catch (error) {
             // Report the actionable failure without a partial graph.
             this.reportError(error);
@@ -86,7 +86,7 @@ export default class CommitmentPlugin extends Plugin {
             // Present the graph when the build reported nonblocking warnings.
             if (result.diagnostics.length > 0) {
                 // Show the warnings with their source paths.
-                this.presenter.show(result, this.settings.presentation.mode);
+                this.presenter.show(result, this.settings.presentation);
             }
         } catch (error) {
             // Report the actionable failure without a partial write.

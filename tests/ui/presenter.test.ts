@@ -10,7 +10,12 @@ import type { GraphResult } from "../../src/graph/commitment-graph";
 import { CONFIG } from "../../src/constants";
 import { ModalGraphPresenter } from "../../src/ui/modal-presenter";
 import type { CanonicalInput } from "../../src/graph/types";
+import type { PresentationSettings } from "../../src/settings/settings";
 import { FakeVault } from "../support/fake-vault";
+
+
+const JSON_PRESENTATION: PresentationSettings = { mode: "json", sort: "name" };
+const TREE_PRESENTATION: PresentationSettings = { mode: "tree", sort: "name" };
 
 
 /** Build one graph and its diagnostics from canonical inputs. */
@@ -27,13 +32,26 @@ function input(
 }
 
 
-const project = (path: string, id: string): CanonicalInput =>
+const projectIn = (area: string, path: string, id: string): CanonicalInput =>
     input(path, [
         ["type", "project"],
         ["id", id],
-        ["area", "work"],
+        ["area", area],
         ["state", "active"],
     ]);
+
+
+const project = (path: string, id: string): CanonicalInput => projectIn("work", path, id);
+
+
+/** Return the rendered area names in document order. */
+function areaNames(): readonly string[] {
+    // Read every area summary label.
+    return Array.from(
+        document.querySelectorAll("details.cg-row[data-cg-key^='area:'] > summary .cg-node .cg-nm"),
+        (node: Element): string => node.textContent ?? "",
+    );
+}
 
 beforeEach(() => {
     // Reset the modal and notice registries and the document body.
@@ -59,7 +77,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "json");
+        presenter.show(result, JSON_PRESENTATION);
 
         const block: Element | null = document.querySelector("pre.commitment-graph__json");
         expect(block?.textContent).toBe(
@@ -76,6 +94,37 @@ describe("text graph presenter", () => {
         );
     });
 
+    it("orders JSON and tree areas by the stored graph sort", () => {
+        // Create the stub app and presenter.
+        const app: App = new App();
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        // Derive a graph whose name and count orders differ.
+        const result: GraphResult = buildGraph([
+            project("projects/alpha.md", "alpha"),
+            project("projects/beta.md", "beta"),
+            project("projects/gamma.md", "gamma"),
+            projectIn("home", "projects/chores.md", "chores"),
+        ]);
+
+        // Require name order in the JSON presentation.
+        presenter.show(result, { mode: "json", sort: "name" });
+        const nameJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
+        expect(nameJson.indexOf('"home"')).toBeLessThan(nameJson.indexOf('"work"'));
+
+        // Require count order in the JSON presentation.
+        presenter.show(result, { mode: "json", sort: "count" });
+        const countJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
+        expect(countJson.indexOf('"work"')).toBeLessThan(countJson.indexOf('"home"'));
+
+        // Require name order in the tree presentation.
+        presenter.show(result, { mode: "tree", sort: "name" });
+        expect(areaNames()).toEqual(["home", "work"]);
+
+        // Require count order in the tree presentation.
+        presenter.show(result, { mode: "tree", sort: "count" });
+        expect(areaNames()).toEqual(["work", "home"]);
+    });
+
     it("omits the warnings section when the graph has no diagnostics", () => {
         // Create the stub app.
         const app: App = new App();
@@ -84,7 +133,7 @@ describe("text graph presenter", () => {
         // Derive the graph from the canonical inputs.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "json");
+        presenter.show(result, JSON_PRESENTATION);
 
         expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
         expect(document.body.textContent).not.toContain("Warnings");
@@ -106,7 +155,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "json");
+        presenter.show(result, JSON_PRESENTATION);
 
         expect(Modal.instances).toHaveLength(1);
         expect(Modal.instances[0]?.titleEl.textContent).toBe("Commitment Graph");
@@ -146,7 +195,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
 
         expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
         // Areas, programs, and projects all render in the tree.
@@ -177,7 +226,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
 
         expect(document.querySelector("img")).toBeNull();
         expect(document.querySelector("b")).toBeNull();
@@ -193,7 +242,7 @@ describe("text graph presenter", () => {
         // Derive the empty graph.
         const result: GraphResult = buildGraph([]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
 
         expect(document.querySelector(".cg-empty")?.textContent).toContain("No area");
         expect(document.querySelector(".cg-node")).toBeNull();
@@ -214,7 +263,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
 
         expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
         expect(document.querySelector("ul.commitment-graph__warnings")?.textContent).toContain(
@@ -229,8 +278,12 @@ describe("text graph presenter", () => {
         expect(styles).toMatch(/\.cg-list\s*{[^}]*overflow-y:\s*auto;/s);
         // Long identifiers truncate with an ellipsis rather than overflow.
         expect(styles).toMatch(/\.cg-nm\s*{[^}]*text-overflow:\s*ellipsis;/s);
-        // The modal content stays full height so the list can scroll.
-        expect(styles).toMatch(/commitment-graph-modal \.modal-content\s*{[^}]*overflow:\s*hidden;/s);
+        // The modal content can shrink but must not clip the search focus ring.
+        const contentRule: string = styles.match(
+            /commitment-graph-modal \.modal-content\s*{([^}]*)}/s,
+        )?.[1] ?? "";
+        expect(contentRule).toContain("min-height: 0;");
+        expect(contentRule).not.toContain("overflow: hidden;");
         // The desktop tree modal pins its height so filtering cannot shrink it.
         expect(styles).toMatch(
             /body:not\(\.is-mobile\) \.modal\.commitment-graph-modal\s*{[^}]*height:\s*88vh;/s,
@@ -256,7 +309,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
 
         // Require the keymap registration.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -282,7 +335,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
         const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
         const escape: (() => unknown) | undefined = modal.scope.handlers
@@ -317,7 +370,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
         const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
 
@@ -336,7 +389,7 @@ describe("text graph presenter", () => {
         const app: App = new App();
         const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.contentEl.querySelector(".cg-list")).not.toBeNull();
 
@@ -355,9 +408,9 @@ describe("text graph presenter", () => {
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Present the graph twice in a row.
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const first: Modal = Modal.instances[0] as Modal;
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const second: Modal = Modal.instances[1] as Modal;
 
         // Require the older modal to close and the newer one to stay open.
@@ -405,7 +458,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
 
         // Require one icon per area, program, and project row.
         const labels: readonly string[] = Array.from(
@@ -426,7 +479,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the project pencil.
@@ -453,7 +506,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project under an implicit area.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "tree");
+        presenter.show(result, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the implicit area plus.
@@ -476,7 +529,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project.
         const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "json");
+        presenter.show(result, JSON_PRESENTATION);
 
         expect(document.querySelector(".cg-file")).toBeNull();
     });

@@ -3,11 +3,11 @@
  */
 
 import type { GraphResult } from "../graph/commitment-graph";
-import type { PresentationMode } from "../settings/settings";
+import type { PresentationSettings } from "../settings/settings";
 
 
 /** Presents a graph without retrieving, building, or persisting it. */
 export interface GraphPresenter {
     /** Display one built graph and its nonblocking findings. */
-    show(result: GraphResult, mode: PresentationMode): void;
+    show(result: GraphResult, presentation: PresentationSettings): void;
 }

@@ -12,6 +12,10 @@ import { ownValue } from "../helpers/utils";
 export type PresentationMode = "json" | "tree";
 
 
+/** Order used for graph areas in every presentation. */
+export type GraphSort = "name" | "count";
+
+
 /** One container kind's creation settings. */
 export interface ContainerCreationSettings {
     /** Vault path of the new document template, or empty for frontmatter only. */
@@ -45,6 +49,9 @@ export interface CommitmentCreationSettings {
 export interface PresentationSettings {
     /** Shape used to present the graph. */
     readonly mode: PresentationMode;
+
+    /** Order used for graph areas. */
+    readonly sort: GraphSort;
 }
 
 
@@ -68,6 +75,13 @@ export class SettingsReader {
         // Require exact text that names an own supported mode.
         return typeof value === "string"
             && Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value);
+    }
+
+    /** Return whether a value is a supported graph sort. */
+    private isGraphSort(value: unknown): value is GraphSort {
+        // Require exact text that names an own supported sort.
+        return typeof value === "string"
+            && Object.prototype.hasOwnProperty.call(CONFIG.GRAPH_SORTS, value);
     }
 
     /** Return a vault-relative setting path, or empty when it is unsafe. */
@@ -150,13 +164,18 @@ export class SettingsReader {
 
     /** Read the supported settings from unvalidated plugin data. */
     public read(data: unknown): CommitmentSettings {
-        // Read the nested presentation mode without trusting its shape.
-        const nested: unknown = ownValue(ownValue(data, "presentation"), "mode");
+        // Read the nested presentation settings without trusting their shape.
+        const presentation: unknown = ownValue(data, "presentation");
+        const storedMode: unknown = ownValue(presentation, "mode");
+        const storedSort: unknown = ownValue(presentation, "sort");
 
-        // Fall back on the configured default presentation mode.
-        const mode: PresentationMode = this.isPresentationMode(nested)
-            ? nested
+        // Fall back on the configured defaults for malformed presentation values.
+        const mode: PresentationMode = this.isPresentationMode(storedMode)
+            ? storedMode
             : CONFIG.DEFAULT_SETTINGS.presentation.mode;
+        const sort: GraphSort = this.isGraphSort(storedSort)
+            ? storedSort
+            : CONFIG.DEFAULT_SETTINGS.presentation.sort;
 
         // Read each known creation kind and ignore unknown kind keys.
         const creationSource: unknown = ownValue(data, "creation");
@@ -176,7 +195,7 @@ export class SettingsReader {
 
         // Return the normalized settings shape.
         return {
-            presentation: { mode },
+            presentation: { mode, sort },
             creation: { idStyle, ...creation },
         };
     }

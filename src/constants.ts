@@ -11,7 +11,7 @@
 
 import type { IdStyle } from "./containers/file-name";
 import type { CommitmentLevel } from "./graph/types";
-import type { CommitmentSettings, PresentationMode } from "./settings/settings";
+import type { CommitmentSettings, GraphSort, PresentationMode } from "./settings/settings";
 
 
 /** Default basename pattern per kind. */
@@ -36,7 +36,7 @@ const kindLabels: Readonly<Record<CommitmentLevel, string>> = {
 
 /** Settings used before the data file supplies any. */
 const defaultSettings: CommitmentSettings = {
-    presentation: { mode: "json" },
+    presentation: { mode: "json", sort: "name" },
     creation: {
         idStyle: defaultIdStyle,
         area: { templatePath: "", folderPath: "", pattern: defaultPatterns.area },
@@ -50,6 +50,13 @@ const defaultSettings: CommitmentSettings = {
 const presentationModes: Readonly<Record<PresentationMode, string>> = {
     json: "JSON",
     tree: "Tree",
+};
+
+
+/** Readable label for every supported graph sort. */
+const graphSorts: Readonly<Record<GraphSort, string>> = {
+    name: "A–Z",
+    count: "Largest first",
 };
 
 
@@ -88,6 +95,9 @@ export const CONFIG = {
 
     /** Readable label for every supported presentation mode. */
     PRESENTATION_MODES: presentationModes,
+
+    /** Readable label for every supported graph sort. */
+    GRAPH_SORTS: graphSorts,
 
     /** Readable copy for every container kind. */
     KIND_LABELS: kindLabels,

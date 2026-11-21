@@ -12,8 +12,10 @@ import { CONFIG } from "../constants";
 import type { ContainerFileActions } from "../containers/container-file-actions";
 import { VaultContainerFileActions } from "../containers/vault-file-actions";
 import type { GraphResult } from "../graph/commitment-graph";
+import type { GraphArea } from "../graph/types";
 import { describeFailure } from "../helpers/utils";
-import type { CommitmentCreationSettings, PresentationMode } from "../settings/settings";
+import type { CommitmentCreationSettings, PresentationSettings } from "../settings/settings";
+import { orderAreas } from "./area-order";
 import { GraphTree } from "./graph-tree";
 
 
@@ -22,8 +24,8 @@ export class GraphModal extends Modal {
     /** Graph snapshot and its nonblocking findings. */
     private readonly result: GraphResult;
 
-    /** Shape used to present the graph. */
-    private readonly mode: PresentationMode;
+    /** Shape and area order used to present the graph. */
+    private readonly presentation: PresentationSettings;
 
     /** Supplier for the creation settings used by tree file actions. */
     private readonly creation: () => CommitmentCreationSettings;
@@ -63,8 +65,13 @@ export class GraphModal extends Modal {
             },
         };
 
-        // Mount the interactive tree for this graph.
-        const tree: GraphTree = new GraphTree(host, this.result.graph.getAreas(), actions);
+        // Mount the interactive tree in the configured area order.
+        const tree: GraphTree = new GraphTree(
+            host,
+            this.result.graph.getAreas(),
+            this.presentation.sort,
+            actions,
+        );
 
         // Bind "/" to the search field through the modal keymap.
         this.scope.register(null, "/", (): false | true => {
@@ -134,14 +141,14 @@ export class GraphModal extends Modal {
     public constructor(
         app: App,
         result: GraphResult,
-        mode: PresentationMode,
+        presentation: PresentationSettings,
         creation: () => CommitmentCreationSettings,
         released: (() => void) | null = null,
     ) {
         // Initialize the Obsidian modal and retain its inputs.
         super(app);
         this.result = result;
-        this.mode = mode;
+        this.presentation = presentation;
         this.creation = creation;
         this.released = released;
     }
@@ -150,7 +157,7 @@ export class GraphModal extends Modal {
     public override onOpen(): void {
         // Identify the modal and size it for the tree.
         this.setTitle(CONFIG.TITLE);
-        if (this.mode === "tree") {
+        if (this.presentation.mode === "tree") {
             // Add the tree sizing classes.
             this.modalEl.classList.add("commitment-graph-modal", "mod-lg");
         }
@@ -159,16 +166,24 @@ export class GraphModal extends Modal {
         const content: HTMLElement = this.contentEl;
         content.empty();
 
-        // Render the selected shape: the raw projection or the interactive tree.
-        if (this.mode === "tree") {
+        // Render the selected shape: the projection or the interactive tree.
+        if (this.presentation.mode === "tree") {
             // Render the interactive tree with file actions.
             this.renderTree(content);
         } else {
-            // Render the graph JSON as selectable text in a scrollable block.
+            // Create the selectable block that carries the projection.
             const block: HTMLElement = content.createEl("pre", {
                 cls: "commitment-graph__json",
             });
-            block.setText(this.result.graph.toJson());
+
+            // Order a copy of the graph areas for this presentation.
+            const orderedAreas: readonly GraphArea[] = orderAreas(
+                this.result.graph.getAreas(),
+                this.presentation.sort,
+            );
+
+            // Serialize that ordered list through the graph's projection format.
+            block.setText(this.result.graph.toJson(orderedAreas));
         }
 
         // Add the warnings when the build reported any.
