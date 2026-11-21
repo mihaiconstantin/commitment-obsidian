@@ -333,16 +333,15 @@ export class GraphTree {
         // Refresh the expand control after a native fold.
         details.addEventListener("toggle", (): void => this.updateToggleAll());
 
-        // Create the area header line and name it after the identifier.
+        // Create the area header line.
         const line: HTMLElement = this.createLine("summary");
-        line.setAttribute("aria-label", area.id);
 
         // Create the area body with its chevron and identifier.
         const node: HTMLElement = document.createElement("span");
         node.className = "cg-node";
         node.style.setProperty("--cg-indent", "0");
         node.append(this.chevron());
-        const name: HTMLElement = this.nameElement(area.id);
+        const name: HTMLElement = this.labelName(line, area.id);
         node.append(name);
         line.append(node);
 
@@ -402,16 +401,15 @@ export class GraphTree {
         // Refresh the expand control after a native fold.
         details.addEventListener("toggle", (): void => this.updateToggleAll());
 
-        // Create the program header line and name it after the identifier.
+        // Create the program header line.
         const line: HTMLElement = this.createLine("summary");
-        line.setAttribute("aria-label", program.id);
 
         // Create the program body with its chevron and identifier.
         const node: HTMLElement = document.createElement("span");
         node.className = "cg-node cg-node--program";
         node.style.setProperty("--cg-indent", "1");
         node.append(this.chevron());
-        const name: HTMLElement = this.nameElement(program.id);
+        const name: HTMLElement = this.labelName(line, program.id);
         node.append(name);
         line.append(node);
 
@@ -616,6 +614,24 @@ export class GraphTree {
         icon.className = "cg-chev";
         setIcon(icon, "chevron-down");
         return icon;
+    }
+
+    /** Return one fold-row name that labels its summary and owns the tooltip. */
+    private labelName(line: HTMLElement, text: string): HTMLElement {
+        // Create the visible identifier.
+        const name: HTMLElement = this.nameElement(text);
+
+        // Give the name a document-unique identifier.
+        name.id = `cg-name-${crypto.randomUUID()}`;
+
+        // Name the summary through the identifier instead of its full-width box.
+        line.setAttribute("aria-labelledby", name.id);
+
+        // Attach the tooltip to the shrink-wrapped identifier.
+        name.setAttribute("aria-label", text);
+
+        // Return the labeled identifier.
+        return name;
     }
 
     /** Return one plain name element for the initial tree build. */

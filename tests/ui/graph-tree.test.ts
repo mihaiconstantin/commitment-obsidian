@@ -156,13 +156,42 @@ describe("graph tree", () => {
         expect(areaDetails(host, "home").open).toBe(true);
         expect(programDetails(host).open).toBe(true);
 
-        // Require each summary to expose only its identifier as its name.
-        expect(summary(areaDetails(host, "work")).getAttribute("aria-label")).toBe("work");
-        expect(summary(areaDetails(host, "home")).getAttribute("aria-label")).toBe("home");
-        expect(summary(programDetails(host)).getAttribute("aria-label")).toBe("phd");
-
         // Require the largest area first with all contents visible.
         expect(rowTexts(host)).toEqual(["work", "alpha", "beta", "phd", "gamma", "home", "chores"]);
+    });
+
+    it("anchors fold tooltips to the identifier", () => {
+        // Mount the tree.
+        const { host } = mount();
+
+        // Read every fold row and its expected identifier.
+        const rows: readonly (readonly [HTMLDetailsElement, string])[] = [
+            [areaDetails(host, "work"), "work"],
+            [areaDetails(host, "home"), "home"],
+            [programDetails(host), "phd"],
+        ];
+
+        // Require each summary to label itself through its identifier.
+        for (const [details, text] of rows) {
+            // Read the summary and its visible name.
+            const line: HTMLElement = summary(details);
+            const name: HTMLElement = line.querySelector(".cg-nm") as HTMLElement;
+
+            // Keep the tooltip off the full-width summary.
+            expect(line.hasAttribute("aria-label")).toBe(false);
+
+            // Resolve the summary name through the visible identifier.
+            expect(line.getAttribute("aria-labelledby")).toBe(name.id);
+
+            // Anchor the tooltip to the identifier itself.
+            expect(name.getAttribute("aria-label")).toBe(text);
+        }
+
+        // Require each label to have its own identifier.
+        const ids: readonly (string | undefined)[] = rows.map(
+            ([details]): string | undefined => summary(details).querySelector(".cg-nm")?.id,
+        );
+        expect(new Set(ids).size).toBe(rows.length);
     });
 
     it("orders areas by identifier when name order is configured", () => {
