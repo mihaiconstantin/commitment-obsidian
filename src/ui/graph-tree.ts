@@ -317,12 +317,6 @@ export class GraphTree {
         // Add the file icon immediately after the title.
         this.appendFileAction(line, { kind: "project", id: identifier, area, program });
 
-        // Label a project that a program coordinates after its file action.
-        if (program !== null) {
-            // Add the program label outside the body button.
-            line.createEl("span", { cls: "cg-tag", text: "in program" });
-        }
-
         // Assemble the completed row.
         row.append(line);
         return { row, name, id: identifier };
@@ -421,11 +415,8 @@ export class GraphTree {
         node.append(name);
         line.append(node);
 
-        // Add the file icon before the tag and count.
+        // Add the file icon before the count.
         this.appendFileAction(line, { kind: "program", id: program.id, area: area.id, program: null });
-
-        // Mark the program entry.
-        line.createEl("span", { cls: "cg-tag", text: "program" });
 
         // Add the program project count.
         const num: HTMLElement = line.createEl("span", { cls: "cg-num", text: String(program.projects.length) });

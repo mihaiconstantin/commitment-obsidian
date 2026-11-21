@@ -476,16 +476,14 @@ describe("graph tree", () => {
         expect(host.querySelectorAll(".cg-file--open")).toHaveLength(6);
         expect(host.querySelectorAll(".cg-file--create")).toHaveLength(1);
 
-        // Require the coordinated project order title, icon, then tag.
+        // Require the coordinated project order title, then icon.
         const gamma: HTMLElement = host.querySelector(".cg-leaf--program") as HTMLElement;
         const gammaLine: HTMLElement = gamma.parentElement as HTMLElement;
         expect(Array.from(gammaLine.children, (node: Element): string => node.className)).toEqual([
             "cg-leaf cg-leaf--program",
             "cg-file cg-file--open",
-            "cg-tag",
         ]);
         expect(gamma.textContent).toBe("└gamma");
-        expect(gammaLine.children[2]?.textContent).toBe("in program");
 
         // Require the action marker and the requested icon.
         const create: Element = host.querySelector(".cg-file--create") as Element;
