@@ -102,14 +102,8 @@ export class TreeModel {
     public filterArea(area: GraphArea): AreaView {
         // Keep the whole area when no query is active.
         if (this.query === "") {
-            // Count the visible projects.
-            let total: number = area.projects.length;
-
-            // Add each program's projects.
-            for (const program of area.programs) {
-                // Add the coordinated count.
-                total += program.projects.length;
-            }
+            // Count the visible projects through the shared project count.
+            const total: number = this.countArea(area);
 
             // Return the unfiltered view.
             return { projects: area.projects, programs: area.programs, visible: true, total };
