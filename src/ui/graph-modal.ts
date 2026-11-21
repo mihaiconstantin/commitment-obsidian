@@ -40,6 +40,9 @@ export class GraphModal extends Modal {
     /** Called after the modal released its content, or null when unused. */
     private readonly released: (() => void) | null;
 
+    /** Keep the base modal from focusing its first input when opened. */
+    public hasInitialInputFocus: boolean = false;
+
     /** Mount the tree and bind the modal keymap shortcuts to it. */
     private renderTree(content: HTMLElement): void {
         // Create the tree host that fills the modal body.

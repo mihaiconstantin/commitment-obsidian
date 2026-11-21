@@ -190,6 +190,7 @@ export class Modal {
     contentEl: HTMLElement;
     opened = false;
     closed = false;
+    hasInitialInputFocus = true;
 
     constructor(app: App) {
         this.app = app;

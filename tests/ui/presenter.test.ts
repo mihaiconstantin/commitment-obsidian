@@ -166,6 +166,22 @@ describe("text graph presenter", () => {
         );
     });
 
+    it("disables the modal's initial input focus", () => {
+        // Create the stub app.
+        const app: App = new App();
+        // Compose the presenter over the app.
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        // Derive a graph with one area.
+        const result: GraphResult = buildGraph([project("projects/alpha.md", "alpha")]);
+
+        // Open the tree presentation.
+        presenter.show(result, TREE_PRESENTATION);
+
+        // Require the modal to leave focus alone on open.
+        const modal: Modal = Modal.instances[0] as Modal;
+        expect(modal.hasInitialInputFocus).toBe(false);
+    });
+
     it("renders areas, programs, and projects as a tree in tree mode", () => {
         // Create the stub app.
         const app: App = new App();
