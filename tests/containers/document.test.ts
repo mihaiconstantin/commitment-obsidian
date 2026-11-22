@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { composeContainerDocument } from "../../src/containers/container-document";
+import { ContainerDocumentComposer } from "../../src/containers/container-document";
 import type { MomentFormatter } from "../../src/containers/container-document";
 import type { ContainerIdentity } from "../../src/graph/types";
 
 
 /** Return a readable marker for every requested moment pattern. */
 const format: MomentFormatter = (pattern: string): string => `[${pattern}]`;
+
+
+/** Compose documents through the one test instance. */
+const composer: ContainerDocumentComposer = new ContainerDocumentComposer();
 
 
 /** Build one identity for composition tests. */
@@ -23,7 +27,7 @@ function identity(
 describe("container document", () => {
     it("overrides the identity and keeps other keys and comments", () => {
         // Compose from a template with conflicting identity fields and comments.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\n# top\ntype: note # keep\nid: old\narea: old\nstatus: planning\n# below\n---\nBody.\n",
             identity("project", "alpha"),
             format,
@@ -46,7 +50,7 @@ describe("container document", () => {
 
     it("omits the program for a direct project and deletes a stale template value", () => {
         // Compose a direct project from a template with a stale program.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\ntype: project\nid: old\narea: old\nprogram: stale\n---\n",
             identity("project", "alpha"),
             format,
@@ -59,7 +63,7 @@ describe("container document", () => {
 
     it("sets the enclosing program for a coordinated project", () => {
         // Compose a coordinated project.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\ntype: project\nid: old\narea: old\nprogram: stale\n---\n",
             identity("project", "alpha", "work", "phd"),
             format,
@@ -72,7 +76,7 @@ describe("container document", () => {
 
     it("deletes a stale area and program from an area template", () => {
         // Compose an area from a template that carries stale relationship fields.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\ntype: project\nid: old\narea: old\nprogram: stale\n---\n",
             identity("area", "work"),
             format,
@@ -87,7 +91,7 @@ describe("container document", () => {
 
     it("preserves an explicit state", () => {
         // Compose from a template with a paused state.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\ntype: project\nid: old\narea: old\nstate: paused\n---\n",
             identity("project", "alpha"),
             format,
@@ -100,7 +104,7 @@ describe("container document", () => {
 
     it("defaults an empty state value and a null state value", () => {
         // Compose from the shipped program template spelling.
-        const empty: string = composeContainerDocument(
+        const empty: string = composer.compose(
             "---\ntype: program\nid:\narea:\nstate:\n---\n",
             identity("program", "phd"),
             format,
@@ -109,7 +113,7 @@ describe("container document", () => {
         expect(empty).not.toMatch(/^state:\s*$/m);
 
         // Compose from an explicit null state.
-        const nullState: string = composeContainerDocument(
+        const nullState: string = composer.compose(
             "---\ntype: project\nid:\narea:\nstate: null\n---\n",
             identity("project", "alpha"),
             format,
@@ -119,7 +123,7 @@ describe("container document", () => {
 
     it("never writes an owning area field into an area document", () => {
         // Compose an area from the shipped template spelling, which has no area field.
-        const shipped: string = composeContainerDocument(
+        const shipped: string = composer.compose(
             "---\ntype: area\nid:\nactive:\ngroup:\n---\n\n## Scope and Standard\n",
             identity("area", "teaching"),
             format,
@@ -130,13 +134,13 @@ describe("container document", () => {
         expect(shipped).not.toMatch(/^area:/m);
 
         // Compose an area without any template.
-        const bare: string = composeContainerDocument("", identity("area", "teaching"), format);
+        const bare: string = composer.compose("", identity("area", "teaching"), format);
         expect(bare).toContain("type: area");
         expect(bare).toContain("id: teaching");
         expect(bare).not.toMatch(/^area:/m);
 
         // Require both relationship fields on the kinds that own them.
-        const program: string = composeContainerDocument(
+        const program: string = composer.compose(
             "---\ntype: program\nid:\narea:\nstate:\n---\n",
             identity("program", "phd"),
             format,
@@ -144,7 +148,7 @@ describe("container document", () => {
         expect(program).toContain("area: work");
 
         // Require the coordinate area on a project.
-        const project: string = composeContainerDocument(
+        const project: string = composer.compose(
             "---\ntype: project\nid:\narea:\nprogram:\nstate:\n---\n",
             identity("project", "thesis", "work", "phd"),
             format,
@@ -155,7 +159,7 @@ describe("container document", () => {
 
     it("defaults the area active flag only when it has no value", () => {
         // Compose an area from a template without active.
-        const absent: string = composeContainerDocument(
+        const absent: string = composer.compose(
             "---\ntype: area\nid:\ngroup:\n---\n",
             identity("area", "work"),
             format,
@@ -164,7 +168,7 @@ describe("container document", () => {
         expect(absent).not.toMatch(/^state:/m);
 
         // Compose an area from the shipped empty active spelling.
-        const empty: string = composeContainerDocument(
+        const empty: string = composer.compose(
             "---\ntype: area\nid:\nactive:\n---\n",
             identity("area", "work"),
             format,
@@ -173,7 +177,7 @@ describe("container document", () => {
         expect(empty).not.toMatch(/^state:/m);
 
         // Keep an explicit false flag untouched.
-        const explicit: string = composeContainerDocument(
+        const explicit: string = composer.compose(
             "---\ntype: area\nid:\nactive: false\n---\n",
             identity("area", "work"),
             format,
@@ -184,12 +188,12 @@ describe("container document", () => {
 
     it("does not add the area active flag to programs or projects", () => {
         // Compose a program and a project from templates without active.
-        const program: string = composeContainerDocument(
+        const program: string = composer.compose(
             "---\ntype: program\nid:\narea:\nstate:\n---\n",
             identity("program", "phd"),
             format,
         );
-        const project: string = composeContainerDocument(
+        const project: string = composer.compose(
             "---\ntype: project\nid:\narea:\nstate:\n---\n",
             identity("project", "alpha"),
             format,
@@ -210,7 +214,7 @@ describe("container document", () => {
             pattern === "YYYY-MM-DD" ? "2026-01-02" : `[${pattern}]`;
 
         // Compose a template with the date placeholder in frontmatter.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\ntype: project\nstart: {{date}}\n---\nBody.\n",
             identity("project", "alpha"),
             dateFormat,
@@ -222,7 +226,7 @@ describe("container document", () => {
 
     it("substitutes every supported placeholder and leaves unknown braces literal", () => {
         // Compose a body-only template with every placeholder form.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "# {{title}}\n{{date}} {{time}} {{date:YYYY/MM}} {{time:HH:mm:ss}} {{unknown}}",
             identity("project", "alpha"),
             format,
@@ -235,7 +239,7 @@ describe("container document", () => {
 
     it("emits a canonical block and blank line for a template without frontmatter", () => {
         // Compose a body-only template.
-        const text: string = composeContainerDocument("Body {{title}}\n", identity("project", "alpha"), format);
+        const text: string = composer.compose("Body {{title}}\n", identity("project", "alpha"), format);
 
         // Require the canonical document.
         expect(text).toBe(
@@ -245,7 +249,7 @@ describe("container document", () => {
 
     it("normalizes CRLF input without a trailing newline", () => {
         // Compose a CRLF template whose body has no final newline.
-        const text: string = composeContainerDocument(
+        const text: string = composer.compose(
             "---\r\ntype: note\r\nid: old\r\n---\r\n\r\nBody",
             identity("project", "alpha"),
             format,
@@ -259,16 +263,55 @@ describe("container document", () => {
 
     it("emits only the canonical block for an empty template", () => {
         // Compose the empty template.
-        const text: string = composeContainerDocument("", identity("project", "alpha"), format);
+        const text: string = composer.compose("", identity("project", "alpha"), format);
 
         // Require the frontmatter block with no body separator.
         expect(text).toBe("---\ntype: project\nid: alpha\narea: work\nstate: active\n---\n");
     });
 
+    it("rejects an invalid identifier, area, type, or program before parsing", () => {
+        // Require a padded identifier to abort before template parsing.
+        expect(() =>
+            composer.compose("---\n- one\n- two\n---\n", identity("project", "alpha "), format),
+        ).toThrowError(/invalid value .* for `id`/);
+
+        // Require a padded owning area to abort.
+        expect(() => composer.compose("", identity("project", "alpha", "work "), format))
+            .toThrowError(/invalid value .* for `area`/);
+
+        // Require an unsupported kind to abort.
+        // @ts-expect-error The runtime guard rejects a kind outside the container types.
+        expect(() => composer.compose("", identity("note", "alpha"), format))
+            .toThrowError(/invalid value .* for `type`/);
+
+        // Require a padded project program to abort.
+        expect(() =>
+            composer.compose("", identity("project", "alpha", "work", "phd "), format),
+        ).toThrowError(/invalid value .* for `program`/);
+    });
+
+    it("rejects a program injected through a merge key", () => {
+        // Compose a template whose merge key would write an empty program.
+        expect(() =>
+            composer.compose(
+                "---\nbase: &base\n  program: \"\"\n<<: *base\n---\n",
+                identity("project", "alpha"),
+                format,
+            ),
+        ).toThrowError(/invalid value .* for `program`/);
+    });
+
+    it("rejects an unresolvable merge source for any container kind", () => {
+        // Require an area template with a non-map merge source to abort.
+        expect(() =>
+            composer.compose("---\n<<: 5\n---\n", identity("area", "work", "work"), format),
+        ).toThrowError(/Merge sources/);
+    });
+
     it("rejects invalid, non-mapping, and unterminated frontmatter", () => {
         // Require duplicate keys to abort.
         expect(() =>
-            composeContainerDocument(
+            composer.compose(
                 "---\ntype: project\ntype: area\n---\n",
                 identity("project", "alpha"),
                 format,
@@ -277,12 +320,12 @@ describe("container document", () => {
 
         // Require a non-mapping root to abort.
         expect(() =>
-            composeContainerDocument("---\n- one\n- two\n---\n", identity("project", "alpha"), format),
+            composer.compose("---\n- one\n- two\n---\n", identity("project", "alpha"), format),
         ).toThrowError(/mapping/);
 
         // Require an unterminated block to abort.
         expect(() =>
-            composeContainerDocument("---\ntype: note\n", identity("project", "alpha"), format),
+            composer.compose("---\ntype: note\n", identity("project", "alpha"), format),
         ).toThrowError(/unterminated/);
     });
 });

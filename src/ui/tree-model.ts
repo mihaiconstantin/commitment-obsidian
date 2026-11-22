@@ -1,20 +1,14 @@
 /**
- * Pure data model and presentation helpers for the interactive graph tree.
+ * Query, order, and totals for the interactive graph tree.
  *
- * Everything here is a function of its arguments plus, for the remembered sort
- * order, `localStorage`. No element is created and no listener is registered,
- * so the rendering class stays focused on the DOM.
+ * The model is a function of the graph areas. Native `details` elements own the
+ * fold state, so no element is created and no listener is registered here; the
+ * rendering class stays focused on the DOM.
  */
 
-import type { CommitmentLevel, ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
-
-
-/** Storage key for the remembered sort order. */
-const SORT_STORAGE_KEY: "commitment-graph-tree-sort" = "commitment-graph-tree-sort";
-
-
-/** Sort orders offered by the toolbar. */
-export type TreeSort = "count" | "name";
+import type { GraphArea, GraphProgram } from "../graph/types";
+import { countAreaProjects, orderAreas } from "../helpers/area-order";
+import type { GraphSort } from "../settings/settings";
 
 
 /** One area reduced to the part that survives the active query. */
@@ -33,148 +27,153 @@ export interface AreaView {
 }
 
 
-/** Return whether one identifier matches the active query. */
-function matches(text: string, query: string): boolean {
-    // Require every identifier when no query is active.
-    return query === "" || text.toLowerCase().includes(query.toLowerCase());
-}
+/**
+ * Interactive tree state for areas, programs, and projects.
+ *
+ * One model lives with each mounted tree and owns the active query, the
+ * configured area order, and the display totals. Rendering reads the model;
+ * only the tree class creates elements and registers listeners.
+ */
+export class TreeModel {
+    /** Areas available to this tree in canonical order. */
+    private readonly areas: readonly GraphArea[];
 
+    /** Configured area display order. */
+    private readonly sort: GraphSort;
 
-/** Return an area's direct and program project count. */
-export function countArea(area: GraphArea): number {
-    // Count the direct projects.
-    let total: number = area.projects.length;
+    /** Total project count across every area. */
+    private readonly totalProjects: number;
 
-    // Add each program's coordinated projects.
-    for (const program of area.programs) {
-        // Add the coordinated count.
-        total += program.projects.length;
+    /** Total program count across every area. */
+    private readonly totalPrograms: number;
+
+    /** Largest area project count, used to size every meter. */
+    private readonly maxTotal: number;
+
+    /** Active filter query. */
+    private query: string = "";
+
+    /** Report whether one identifier matches the active query. */
+    private matches(text: string): boolean {
+        // Require every entry when no query is active.
+        return this.query === "" || text.toLowerCase().includes(this.query.toLowerCase());
     }
 
-    // Return the area total.
-    return total;
-}
+    /** Read the graph areas, their order, and their totals. */
+    public constructor(areas: readonly GraphArea[], sort: GraphSort) {
+        // Store the data and order for every later view.
+        this.areas = areas;
+        this.sort = sort;
 
-
-/** Read the remembered sort order, defaulting to the largest first. */
-export function readSort(): TreeSort {
-    // Read the stored order without trusting it.
-    try {
-        // Require the stored identifier order.
-        return window.localStorage.getItem(SORT_STORAGE_KEY) === "name" ? "name" : "count";
-    } catch {
-        // Fall back when storage is denied.
-        return "count";
+        // Read the display totals once for the stats line and the meters.
+        this.totalProjects = areas.reduce(
+            (sum: number, area: GraphArea): number => sum + this.countArea(area),
+            0,
+        );
+        this.totalPrograms = areas.reduce(
+            (sum: number, area: GraphArea): number => sum + area.programs.length,
+            0,
+        );
+        this.maxTotal = areas.reduce(
+            (max: number, area: GraphArea): number => Math.max(max, this.countArea(area)),
+            0,
+        );
     }
-}
 
-
-/** Remember one sort order for the next open, ignoring denied storage. */
-export function writeSort(sort: TreeSort): void {
-    // Store the selected order without surfacing a denied backend.
-    try {
-        // Persist the order for the next mount.
-        window.localStorage.setItem(SORT_STORAGE_KEY, sort);
-    } catch {
-        // Ignore a denied storage backend.
+    /** Replace the active filter query. */
+    public setQuery(query: string): void {
+        // Store the latest query.
+        this.query = query;
     }
-}
 
+    /** Return the active filter query. */
+    public getQuery(): string {
+        // Report the latest query.
+        return this.query;
+    }
 
-/** Read the focus-restoration key for one container file action. */
-export function fileKey(identity: ContainerIdentity): string {
-    // Include every identity part that can repeat across rows.
-    return `file:${identity.kind}:${identity.area}:${identity.program ?? ""}:${identity.id}`;
-}
+    /** Return the graph areas in the configured display order. */
+    public orderedAreas(): readonly GraphArea[] {
+        // Apply the configured order to the stored graph areas.
+        return orderAreas(this.areas, this.sort);
+    }
 
+    /** Return the part of one area that survives the active query. */
+    public filterArea(area: GraphArea): AreaView {
+        // Keep the whole area when no query is active.
+        if (this.query === "") {
+            // Count the visible projects through the shared project count.
+            const total: number = this.countArea(area);
 
-/** Build the identity for one rendered row. */
-export function rowIdentity(
-    kind: CommitmentLevel,
-    id: string,
-    area: string,
-    program: string | null,
-): ContainerIdentity {
-    // Return the exact row identity.
-    return { kind, id, area, program };
-}
-
-
-/** Return the areas ordered for display. */
-export function orderedAreas(areas: readonly GraphArea[], sort: TreeSort): readonly GraphArea[] {
-    // Copy the areas before sorting.
-    const ordered: GraphArea[] = [...areas];
-
-    // Sort by identifier or by descending size.
-    ordered.sort((left: GraphArea, right: GraphArea): number => {
-        // Use the identifier order when requested.
-        if (sort === "name") {
-            // Compare the identifiers.
-            return left.id.localeCompare(right.id);
+            // Return the unfiltered view.
+            return { projects: area.projects, programs: area.programs, visible: true, total };
         }
 
-        // Compare by size, then by identifier for a stable order.
-        return countArea(right) - countArea(left) || left.id.localeCompare(right.id);
-    });
+        // Read whether the area identifier matches.
+        const areaHit: boolean = this.matches(area.id);
 
-    // Return the ordered areas.
-    return ordered;
-}
+        // Keep matching direct projects even when the area matches.
+        const projects: readonly string[] = area.projects.filter(
+            (project: string): boolean => this.matches(project),
+        );
 
-
-/** Return the part of one area that survives the active query. */
-export function filterArea(area: GraphArea, query: string): AreaView {
-    // Keep the whole area when no query is active.
-    if (query === "") {
-        // Count the visible projects.
-        let total: number = area.projects.length;
-
-        // Add each program's projects.
+        // Keep programs whose identifier or projects match.
+        const programs: GraphProgram[] = [];
+        let total: number = projects.length;
         for (const program of area.programs) {
-            // Add the coordinated count.
-            total += program.projects.length;
+            // Keep every project when the area or program matches.
+            const keepAll: boolean = areaHit || this.matches(program.id);
+
+            // Keep the matching projects otherwise.
+            const kept: readonly string[] = keepAll
+                ? program.projects
+                : program.projects.filter((project: string): boolean => this.matches(project));
+
+            // Skip a program with nothing visible.
+            if (!keepAll && kept.length === 0) {
+                // Continue with the next program.
+                continue;
+            }
+
+            // Retain the visible program.
+            programs.push({ id: program.id, projects: kept });
+            total += kept.length;
         }
 
-        // Return the unfiltered view.
-        return { projects: area.projects, programs: area.programs, visible: true, total };
+        // Report whether anything in the area is visible.
+        const visible: boolean = areaHit || projects.length > 0 || programs.length > 0;
+
+        // Return the filtered view.
+        return { projects, programs, visible, total };
     }
 
-    // Read whether the area identifier matches.
-    const areaHit: boolean = matches(area.id, query);
-
-    // Keep matching direct projects.
-    const projects: readonly string[] = area.projects.filter(
-        (project: string): boolean => matches(project, query),
-    );
-
-    // Keep programs whose identifier or projects match.
-    const programs: GraphProgram[] = [];
-    let total: number = projects.length;
-    for (const program of area.programs) {
-        // Keep every project when the area or program matches.
-        const keepAll: boolean = areaHit || matches(program.id, query);
-
-        // Keep the matching projects otherwise.
-        const kept: readonly string[] = keepAll
-            ? program.projects
-            : program.projects.filter((project: string): boolean => matches(project, query));
-
-        // Skip a program with nothing visible.
-        if (!keepAll && kept.length === 0) {
-            // Continue with the next program.
-            continue;
-        }
-
-        // Retain the visible program.
-        programs.push({ id: program.id, projects: kept });
-        total += kept.length;
+    /** Return an area's direct and program project count. */
+    public countArea(area: GraphArea): number {
+        // Delegate the shared project count.
+        return countAreaProjects(area);
     }
 
-    // Report whether anything in the area is visible.
-    const visible: boolean = areaHit || projects.length > 0 || programs.length > 0;
+    /** Return the total project count across every area. */
+    public getTotalProjects(): number {
+        // Report the counted total.
+        return this.totalProjects;
+    }
 
-    // Return the filtered view.
-    return { projects, programs, visible, total };
+    /** Return the total program count across every area. */
+    public getTotalPrograms(): number {
+        // Report the counted total.
+        return this.totalPrograms;
+    }
+
+    /** Return the largest area project count. */
+    public getMaxTotal(): number {
+        // Report the meter maximum.
+        return this.maxTotal;
+    }
+
+    /** Return the number of areas in the graph. */
+    public getAreaCount(): number {
+        // Report the stored area count.
+        return this.areas.length;
+    }
 }
-
-

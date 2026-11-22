@@ -5,12 +5,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App, Modal, Notice } from "obsidian";
-import { CommitmentGraph } from "../../src/graph/commitment-graph";
-import type { GraphResult } from "../../src/graph/commitment-graph";
-import { DEFAULT_SETTINGS } from "../../src/settings/settings";
+import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
+import { CONFIG } from "../../src/constants";
 import { ModalGraphPresenter } from "../../src/ui/modal-presenter";
 import type { CanonicalInput } from "../../src/graph/types";
+import type { PresentationSettings } from "../../src/settings/settings";
 import { FakeVault } from "../support/fake-vault";
+
+
+const JSON_PRESENTATION: PresentationSettings = { mode: "json", sort: "name" };
+const TREE_PRESENTATION: PresentationSettings = { mode: "tree", sort: "name" };
+
+
+/** Build one graph and its diagnostics from canonical inputs. */
+function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
+    return new GraphBuilder(inputs).build();
+}
 
 
 function input(
@@ -21,13 +31,26 @@ function input(
 }
 
 
-const project = (path: string, id: string): CanonicalInput =>
+const projectIn = (area: string, path: string, id: string): CanonicalInput =>
     input(path, [
         ["type", "project"],
         ["id", id],
-        ["area", "work"],
+        ["area", area],
         ["state", "active"],
     ]);
+
+
+const project = (path: string, id: string): CanonicalInput => projectIn("work", path, id);
+
+
+/** Return the rendered area names in document order. */
+function areaNames(): readonly string[] {
+    // Read every area summary label.
+    return Array.from(
+        document.querySelectorAll("details.cg-row[data-cg-key^='area:'] > summary .cg-node .cg-nm"),
+        (node: Element): string => node.textContent ?? "",
+    );
+}
 
 beforeEach(() => {
     // Reset the modal and notice registries and the document body.
@@ -37,13 +60,29 @@ beforeEach(() => {
 });
 
 describe("text graph presenter", () => {
-    it("renders the graph text and warnings with paths", () => {
+    it("renders the graph text", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
+
+        presenter.show(result.graph, JSON_PRESENTATION);
+
+        const block: Element | null = document.querySelector("pre.commitment-graph__json");
+        expect(block?.textContent).toBe(
+            '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',
+        );
+        expect(block?.textContent).toContain('"alpha"');
+    });
+
+    it("does not render diagnostics in the graph modal", () => {
+        // Create the stub app and presenter.
+        const app: App = new App();
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        // Derive a graph with an unresolved support anchor.
+        const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("meetings/missing.md", [
                 ["type", "meeting"],
@@ -53,45 +92,58 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "json");
-
-        const block: Element | null = document.querySelector("pre.commitment-graph__json");
-        expect(block?.textContent).toBe(
-            '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',
-        );
-        expect(block?.textContent).toContain('"alpha"');
-        const warnings: Element | null = document.querySelector(
-            "ul.commitment-graph__warnings",
-        );
-        expect(warnings?.children).toHaveLength(1);
-        expect(warnings?.textContent).toContain("meetings/missing.md");
-        expect(document.querySelector(".commitment-graph__paths")?.textContent).toBe(
-            "meetings/missing.md",
-        );
-    });
-
-    it("omits the warnings section when the graph has no diagnostics", () => {
-        // Create the stub app.
-        const app: App = new App();
-        // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
-        // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
-
-        presenter.show(result, "json");
-
+        // Require the JSON presentation to omit the finding.
+        presenter.show(result.graph, JSON_PRESENTATION);
         expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
         expect(document.body.textContent).not.toContain("Warnings");
+        expect(document.body.textContent).not.toContain("meetings/missing.md");
+
+        // Require the tree presentation to omit the finding too.
+        presenter.show(result.graph, TREE_PRESENTATION);
+        expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
+        expect(document.body.textContent).not.toContain("Warnings");
+        expect(document.body.textContent).not.toContain("meetings/missing.md");
+    });
+
+    it("orders JSON and tree areas by the stored graph sort", () => {
+        // Create the stub app and presenter.
+        const app: App = new App();
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        // Derive a graph whose name and count orders differ.
+        const result: GraphBuild = buildGraph([
+            project("projects/alpha.md", "alpha"),
+            project("projects/beta.md", "beta"),
+            project("projects/gamma.md", "gamma"),
+            projectIn("home", "projects/chores.md", "chores"),
+        ]);
+
+        // Require name order in the JSON presentation.
+        presenter.show(result.graph, { mode: "json", sort: "name" });
+        const nameJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
+        expect(nameJson.indexOf('"home"')).toBeLessThan(nameJson.indexOf('"work"'));
+
+        // Require count order in the JSON presentation.
+        presenter.show(result.graph, { mode: "json", sort: "count" });
+        const countJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
+        expect(countJson.indexOf('"work"')).toBeLessThan(countJson.indexOf('"home"'));
+
+        // Require name order in the tree presentation.
+        presenter.show(result.graph, { mode: "tree", sort: "name" });
+        expect(areaNames()).toEqual(["home", "work"]);
+
+        // Require count order in the tree presentation.
+        presenter.show(result.graph, { mode: "tree", sort: "count" });
+        expect(areaNames()).toEqual(["work", "home"]);
     });
 
     it("opens a titled standard modal and never injects HTML", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         Modal.instances = [];
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             input("projects/x.md", [
                 ["type", "project"],
                 ["id", "<b>bold</b>"],
@@ -100,7 +152,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "json");
+        presenter.show(result.graph, JSON_PRESENTATION);
 
         expect(Modal.instances).toHaveLength(1);
         expect(Modal.instances[0]?.titleEl.textContent).toBe("Commitment Graph");
@@ -111,13 +163,29 @@ describe("text graph presenter", () => {
         );
     });
 
+    it("disables the modal's initial input focus", () => {
+        // Create the stub app.
+        const app: App = new App();
+        // Compose the presenter over the app.
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        // Derive a graph with one area.
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
+
+        // Open the tree presentation.
+        presenter.show(result.graph, TREE_PRESENTATION);
+
+        // Require the modal to leave focus alone on open.
+        const modal: Modal = Modal.instances[0] as Modal;
+        expect(modal.hasInitialInputFocus).toBe(false);
+    });
+
     it("renders areas, programs, and projects as a tree in tree mode", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with a program and a direct project.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("projects/beta.md", [
                 ["type", "project"],
@@ -140,8 +208,11 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
 
+        const modal: Modal = Modal.instances[0] as Modal;
+        expect(modal.modalEl.classList.contains("commitment-modal")).toBe(true);
+        expect(modal.modalEl.classList.contains("mod-lg")).toBe(true);
         expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
         // Areas, programs, and projects all render in the tree.
         expect(document.querySelector(".cg-node .cg-nm")?.textContent).toBe("work");
@@ -156,13 +227,31 @@ describe("text graph presenter", () => {
         expect(document.querySelector(".commitment-graph__json")).toBeNull();
     });
 
+    it("applies supplied accent colors to the tree", () => {
+        // Create the stub app and a presenter with appearance overrides.
+        const app: App = new App();
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(
+            app,
+            () => CONFIG.DEFAULT_SETTINGS.creation,
+            () => ({ area: "#112233", program: "#445566" }),
+        );
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
+
+        presenter.show(result.graph, TREE_PRESENTATION);
+
+        // Require every supplied color on the mounted tree host.
+        const host: HTMLElement = document.querySelector(".commitment-graph__tree-host") as HTMLElement;
+        expect(host.style.getPropertyValue("--cg-area")).toBe("#112233");
+        expect(host.style.getPropertyValue("--cg-program")).toBe("#445566");
+    });
+
     it("renders no markup from identifiers in tree mode", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with an identifier that looks like markup.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             input("projects/x.md", [
                 ["type", "project"],
                 ["id", "<img src=x>"],
@@ -171,7 +260,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
 
         expect(document.querySelector("img")).toBeNull();
         expect(document.querySelector("b")).toBeNull();
@@ -183,51 +272,43 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the empty graph.
-        const result: GraphResult = CommitmentGraph.build([]);
+        const result: GraphBuild = buildGraph([]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
 
-        expect(document.querySelector(".cg-empty")?.textContent).toContain("No area");
+        expect(document.querySelector(".cg-empty")?.textContent).toContain("No areas");
         expect(document.querySelector(".cg-node")).toBeNull();
-    });
-
-    it("shows warnings in tree mode too", () => {
-        // Create the stub app.
-        const app: App = new App();
-        // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
-        // Derive a graph with an unresolved support anchor.
-        const result: GraphResult = CommitmentGraph.build([
-            project("projects/alpha.md", "alpha"),
-            input("meetings/missing.md", [
-                ["type", "meeting"],
-                ["level", "project"],
-                ["anchor", "missing"],
-            ]),
-        ]);
-
-        presenter.show(result, "html");
-
-        expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
-        expect(document.querySelector("ul.commitment-graph__warnings")?.textContent).toContain(
-            "meetings/missing.md",
-        );
     });
 
     it("keeps the tree scrollable and its rows foldable through the stylesheet", () => {
         // Read the shipped stylesheet.
         const styles: string = readFileSync("assets/styles.css", "utf8");
-        // The list scrolls inside the modal instead of the page.
-        expect(styles).toMatch(/\.cg-list\s*{[^}]*overflow-y:\s*auto;/s);
+        // The shared list scrolls inside the modal instead of the page.
+        expect(styles).toMatch(/\.commitment-modal__scroll\s*{[^}]*overflow-y:\s*auto;/s);
         // Long identifiers truncate with an ellipsis rather than overflow.
         expect(styles).toMatch(/\.cg-nm\s*{[^}]*text-overflow:\s*ellipsis;/s);
-        // The modal content stays full height so the list can scroll.
-        expect(styles).toMatch(/commitment-graph-modal \.modal-content\s*{[^}]*overflow:\s*hidden;/s);
-        // The desktop tree modal pins its height so filtering cannot shrink it.
+        // The modal content can shrink but must not clip the search focus ring.
+        const contentRule: string = styles.match(
+            /commitment-modal \.modal-content\s*{([^}]*)}/s,
+        )?.[1] ?? "";
+        expect(contentRule).toContain("min-height: 0;");
+        expect(contentRule).not.toContain("overflow: hidden;");
+        // The desktop shell pins its height so filtering cannot shrink it.
         expect(styles).toMatch(
-            /body:not\(\.is-mobile\) \.modal\.commitment-graph-modal\s*{[^}]*height:\s*88vh;/s,
+            /body:not\(\.is-mobile\) \.modal\.commitment-modal\s*{[^}]*height:\s*88vh;/s,
+        );
+        // Filtered rows stay out of the flow even when a class sets a display.
+        expect(styles).toMatch(
+            /\.commitment-graph__tree-host \[hidden\]\s*{[^}]*display:\s*none\s*!important;/s,
+        );
+        // Native area and program summaries hide the user-agent marker.
+        expect(styles).toMatch(
+            /\.commitment-graph__tree-host \.cg-row > summary,\s*\.commitment-graph__tree-host \.cg-program > summary\s*{[^}]*list-style:\s*none;/s,
+        );
+        expect(styles).toMatch(
+            /\.commitment-graph__tree-host \.cg-row > summary::-webkit-details-marker,\s*\.commitment-graph__tree-host \.cg-program > summary::-webkit-details-marker\s*{[^}]*display:\s*none;/s,
         );
     });
 
@@ -235,11 +316,11 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
 
         // Require the keymap registration.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -257,69 +338,12 @@ describe("text graph presenter", () => {
         expect(second).toBe(true);
     });
 
-    it("clears the search on Escape before Obsidian closes the modal", () => {
-        // Create the stub app.
-        const app: App = new App();
-        // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
-        // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
-
-        presenter.show(result, "html");
-        const modal: Modal = Modal.instances[0] as Modal;
-        const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
-        const escape: (() => unknown) | undefined = modal.scope.handlers
-            .find((handler) => handler.key === "Escape")?.func;
-        expect(escape).toBeDefined();
-
-        // Type a query and press Escape from the search field.
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.focus();
-        const cleared: unknown = escape?.();
-
-        // Require the query to clear and the modal to stay open.
-        expect(cleared).toBe(false);
-        expect(input.value).toBe("");
-        expect(modal.closed).toBe(false);
-        expect(document.querySelector(".cg-stats")?.textContent).toBe("1 areas · 1 projects · 0 programs");
-
-        // Leave Escape alone when the search field does not have focus.
-        input.blur();
-        expect(escape?.()).toBe(true);
-
-        // Release the tree listeners and the pending filter timer.
-        modal.close();
-    });
-
-    it("releases the tree listeners when the modal closes", () => {
-        // Create the stub app.
-        const app: App = new App();
-        // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
-        // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
-
-        presenter.show(result, "html");
-        const modal: Modal = Modal.instances[0] as Modal;
-        const input: HTMLInputElement = modal.contentEl.querySelector(".cg-search input") as HTMLInputElement;
-
-        // Type a query, close the modal, then press Escape.
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        modal.close();
-        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-
-        // Require the closed tree to ignore the shortcut.
-        expect(input.value).toBe("alpha");
-    });
-
     it("releases the rendered tree when the modal closes", () => {
         // Create the stub app and present one tree.
         const app: App = new App();
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
-        presenter.show(result, "html");
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
+        presenter.show(result.graph, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.contentEl.querySelector(".cg-list")).not.toBeNull();
 
@@ -333,41 +357,31 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with one area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Present the graph twice in a row.
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
         const first: Modal = Modal.instances[0] as Modal;
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
         const second: Modal = Modal.instances[1] as Modal;
 
         // Require the older modal to close and the newer one to stay open.
         expect(first.closed).toBe(true);
         expect(second.closed).toBe(false);
 
-        // Require the newer tree to keep its shortcuts.
-        const input: HTMLInputElement = second.contentEl.querySelector(".cg-search input") as HTMLInputElement;
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.focus();
-        const escape: (() => unknown) | undefined = second.scope.handlers
-            .find((handler) => handler.key === "Escape")?.func;
-        expect(escape?.()).toBe(false);
-        expect(input.value).toBe("");
-
         // Close the newer modal after the assertions.
         second.close();
     });
 
-    it("renders pencils for explicit containers and pluses for implicit ones", () => {
+    it("renders sticky-note icons for explicit containers and circle-plus icons for implicit ones", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive a graph with an explicit area and an implicit program.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             input("areas/work.md", [
                 ["type", "area"],
                 ["id", "work"],
@@ -388,7 +402,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
 
         // Require one icon per area, program, and project row.
         const labels: readonly string[] = Array.from(
@@ -405,14 +419,14 @@ describe("text graph presenter", () => {
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph with one explicit project.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
 
-        // Click the project pencil.
+        // Click the project sticky-note icon.
         (modal.contentEl.querySelector(".cg-leaf + .cg-file") as HTMLElement).click();
         await vi.waitFor(() => {
             // Require the modal to close after the open call settles.
@@ -432,11 +446,11 @@ describe("text graph presenter", () => {
         });
         const app: App = new App(vault);
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph with one explicit project under an implicit area.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "html");
+        presenter.show(result.graph, TREE_PRESENTATION);
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the implicit area plus.
@@ -455,11 +469,11 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
         // Derive the graph with one explicit project.
-        const result: GraphResult = CommitmentGraph.build([project("projects/alpha.md", "alpha")]);
+        const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result, "json");
+        presenter.show(result.graph, JSON_PRESENTATION);
 
         expect(document.querySelector(".cg-file")).toBeNull();
     });

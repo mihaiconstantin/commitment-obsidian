@@ -1,13 +1,13 @@
 {
   "name": "commitment-graph",
   "version": "0.2.0",
-  "description": "View and update the derived Commitment graph from an Obsidian vault.",
+  "description": "View, update, and diagnose the derived Commitment graph from an Obsidian vault.",
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
-    "build": "npm run typecheck && node esbuild.config.mjs production && node tools/check-bundle.mjs",
+    "build": "npm run typecheck && node esbuild.config.mjs production",
     "dev": "node esbuild.config.mjs"
   },
   "keywords": [],

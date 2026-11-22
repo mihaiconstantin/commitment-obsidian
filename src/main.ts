@@ -1,34 +1,25 @@
 /**
- * Obsidian plugin entry point: composition root for the two graph commands.
+ * Obsidian plugin entry point: composition root for the graph and Doctor
+ * commands.
  */
 
 import { Notice, Plugin, type App, type PluginManifest } from "obsidian";
 
-import { CommitmentGraph, type GraphResult } from "./graph/commitment-graph";
+import { CONFIG } from "./constants";
+import { GraphBuilder, type GraphBuild } from "./graph/builder";
 import { VaultGraphStore, type WriteOutcome } from "./graph/store";
-import type { InputSnapshot } from "./graph/types";
-import { describeFailure } from "./plugin-failure";
+import type { CanonicalInput } from "./graph/types";
+import { countLabel } from "./helpers/strings";
+import { describeFailure } from "./helpers/utils";
 import {
-    readCommitmentSettings,
+    SettingsReader,
+    type AppearanceSettings,
     type CommitmentCreationSettings,
     type CommitmentSettings,
 } from "./settings/settings";
 import { CommitmentSettingTab } from "./settings/settings-tab";
+import { ModalDoctorPresenter } from "./ui/modal-doctor-presenter";
 import { ModalGraphPresenter } from "./ui/modal-presenter";
-import type { GraphPresenter } from "./ui/presenter";
-
-
-/** Command names registered under the `Commitment` plugin name. */
-const VIEW_COMMAND: "View graph" = "View graph";
-const UPDATE_COMMAND: "Update graph" = "Update graph";
-
-
-/** Readiness message shown before the workspace has finished loading. */
-const NOT_READY_MESSAGE: "Vault is still loading; try again" = "Vault is still loading; try again";
-
-
-/** Busy message shown when one graph command is already running. */
-const BUSY_MESSAGE: "A commitment graph command is already running" = "A commitment graph command is already running";
 
 
 /** Commitment graph plugin. */
@@ -36,48 +27,85 @@ export default class CommitmentPlugin extends Plugin {
     /** Vault-backed graph inputs and output. */
     private readonly store: VaultGraphStore;
 
-    /** Replaceable graph presentation seam. */
-    private readonly presenter: GraphPresenter;
+    /** Graph presentation owned by the plugin. */
+    private readonly graphPresenter: ModalGraphPresenter;
+
+    /** Doctor presentation owned by the plugin. */
+    private readonly doctorPresenter: ModalDoctorPresenter;
 
     /** Whether the workspace finished loading its layout. */
     private ready = false;
 
-    /** Whether one graph command is already running. */
+    /** Whether one commitment command is already running. */
     private busy = false;
 
+    /** Reads and normalizes persisted plugin data. */
+    private readonly settingsReader: SettingsReader = new SettingsReader();
+
     /** Persisted graph presentation and container creation settings. */
-    settings: CommitmentSettings = readCommitmentSettings(null);
+    public settings: CommitmentSettings = CONFIG.DEFAULT_SETTINGS;
 
-    /** Compose the vault store and the modal presenter for one app. */
-    constructor(app: App, manifest: PluginManifest) {
-        // Initialize the Obsidian plugin base with its app and manifest.
-        super(app, manifest);
+    /** Read the saved inputs and build the graph with its findings. */
+    private async readBuild(): Promise<GraphBuild> {
+        // Read every eligible saved file and parse its frontmatter.
+        const inputs: readonly CanonicalInput[] = await this.store.readInputs();
 
-        // Compose the vault store and the modal presenter once.
-        this.store = new VaultGraphStore(app.vault);
-        this.presenter = new ModalGraphPresenter(
-            app,
-            (): CommitmentCreationSettings => this.settings.creation,
-        );
+        // Build the graph and its nonblocking findings once.
+        return new GraphBuilder(inputs).build();
     }
 
     /** Derive and display the graph without writing a vault file. */
-    private async runView(): Promise<void> {
-        // Require the ready workspace and release the guard on every path.
+    private runView(): Promise<void> {
+        // Run the graph display behind the shared command guard.
+        return this.runGuarded(async (): Promise<void> => {
+            // Build the same graph as Update without writing.
+            const build: GraphBuild = await this.readBuild();
+
+            // Display the graph without writing.
+            this.graphPresenter.show(build.graph, this.settings.presentation);
+        });
+    }
+
+    /** Derive and persist the graph, reporting the outcome. */
+    private runUpdate(): Promise<void> {
+        // Run the graph update behind the shared command guard.
+        return this.runGuarded(async (): Promise<void> => {
+            // Build the graph before touching the derived output.
+            const build: GraphBuild = await this.readBuild();
+
+            // Create, leave unchanged, or replace the derived output.
+            const outcome: WriteOutcome = await this.store.writeGraph(build.graph.toJson());
+
+            // Report the update and any findings that need the Doctor.
+            new Notice(this.updateNotice(outcome, build.diagnostics.length));
+        });
+    }
+
+    /** Display the current nonblocking findings without writing a file. */
+    private runDoctor(): Promise<void> {
+        // Run the Doctor display behind the shared command guard.
+        return this.runGuarded(async (): Promise<void> => {
+            // Build the graph and read its findings from the same moment.
+            const build: GraphBuild = await this.readBuild();
+
+            // Show the findings without writing a vault file.
+            this.doctorPresenter.show(build.diagnostics);
+        });
+    }
+
+    /** Run one command behind the shared readiness and busy guard. */
+    private async runGuarded(action: () => Promise<void>): Promise<void> {
+        // Require the ready workspace and acquire the guard.
         if (!this.beginCommand()) {
             // Stop when the plugin is not ready or another command is running.
             return;
         }
 
         try {
-            // Read the saved inputs and build the same graph as Update.
-            const snapshot: InputSnapshot = await this.store.readInputs();
-            const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
-
-            // Display the graph and its warnings without writing.
-            this.presenter.show(result, this.settings.presentation.mode);
+            // Run the command body.
+            await action();
         } catch (error) {
-            // Report the actionable failure without a partial graph.
+            // Report the actionable failure without a partial result.
             this.reportError(error);
         } finally {
             // Release the command guard.
@@ -85,40 +113,17 @@ export default class CommitmentPlugin extends Plugin {
         }
     }
 
-    /** Derive, recheck, and persist the graph, reporting the outcome. */
-    private async runUpdate(): Promise<void> {
-        // Require the ready workspace and release the guard on every path.
-        if (!this.beginCommand()) {
-            // Stop when the plugin is not ready or another command is running.
-            return;
+    /** Build the update notice with the finding count when it is nonzero. */
+    private updateNotice(outcome: WriteOutcome, issueCount: number): string {
+        // Keep the plain outcome when the build found no issues.
+        const base: string = `Graph ${outcome}`;
+        if (issueCount === 0) {
+            // Report the unchanged or written outcome alone.
+            return base;
         }
 
-        try {
-            // Read the saved inputs and build the graph.
-            const snapshot: InputSnapshot = await this.store.readInputs();
-            const result: GraphResult = CommitmentGraph.build(snapshot.inputs);
-
-            // Reject changed inputs before touching the destination.
-            await this.store.assertUnchanged(snapshot);
-
-            // Create, leave unchanged, or replace the derived output.
-            const outcome: WriteOutcome = await this.store.writeGraph(result.graph.toJson());
-
-            // Report the concise update outcome.
-            new Notice(`Commitment graph ${outcome}`);
-
-            // Present the graph when the build reported nonblocking warnings.
-            if (result.diagnostics.length > 0) {
-                // Show the warnings with their source paths.
-                this.presenter.show(result, this.settings.presentation.mode);
-            }
-        } catch (error) {
-            // Report the actionable failure without a partial write.
-            this.reportError(error);
-        } finally {
-            // Release the command guard.
-            this.finishCommand();
-        }
+        // Point the user to the command that presents the findings.
+        return `${base}. ${countLabel(issueCount, "issue")}. Run \`Commitment: ${CONFIG.DOCTOR_COMMAND}\`.`;
     }
 
     /** Check readiness and acquire the single command guard. */
@@ -126,14 +131,14 @@ export default class CommitmentPlugin extends Plugin {
         // Reject commands before the workspace layout is ready.
         if (!this.ready) {
             // Report the readiness message.
-            new Notice(NOT_READY_MESSAGE);
+            new Notice(CONFIG.NOT_READY_MESSAGE);
             return false;
         }
 
-        // Reject a command while another graph command is running.
+        // Reject a command while another commitment command is running.
         if (this.busy) {
             // Report the busy message.
-            new Notice(BUSY_MESSAGE);
+            new Notice(CONFIG.BUSY_MESSAGE);
             return false;
         }
 
@@ -154,10 +159,25 @@ export default class CommitmentPlugin extends Plugin {
         new Notice(describeFailure(error));
     }
 
+    /** Compose the vault store and both modal presenters for one app. */
+    public constructor(app: App, manifest: PluginManifest) {
+        // Initialize the Obsidian plugin base with its app and manifest.
+        super(app, manifest);
+
+        // Compose the vault store and both modal presenters once.
+        this.store = new VaultGraphStore(app.vault);
+        this.graphPresenter = new ModalGraphPresenter(
+            app,
+            (): CommitmentCreationSettings => this.settings.creation,
+            (): AppearanceSettings => this.settings.appearance,
+        );
+        this.doctorPresenter = new ModalDoctorPresenter(app);
+    }
+
     /** Persist one complete settings value after normalization. */
-    async saveSettings(next: CommitmentSettings): Promise<void> {
+    public async saveSettings(next: CommitmentSettings): Promise<void> {
         // Normalize the supplied value through the settings reader.
-        const normalized: CommitmentSettings = readCommitmentSettings(next);
+        const normalized: CommitmentSettings = this.settingsReader.read(next);
 
         // Retain the normalized settings for the next command or action.
         this.settings = normalized;
@@ -166,10 +186,10 @@ export default class CommitmentPlugin extends Plugin {
         await this.saveData(normalized);
     }
 
-    /** Register the two commands and defer reads until the layout is ready. */
-    async onload(): Promise<void> {
+    /** Register the commands and defer reads until the layout is ready. */
+    public override async onload(): Promise<void> {
         // Apply the stored settings before any command or tab can read them.
-        this.settings = readCommitmentSettings(await this.loadData().catch((): null => null));
+        this.settings = this.settingsReader.read(await this.loadData().catch((): null => null));
 
         // Register the settings tab for presentation and creation.
         this.addSettingTab(new CommitmentSettingTab(this.app, this));
@@ -183,7 +203,7 @@ export default class CommitmentPlugin extends Plugin {
         // Register the read-only graph command.
         this.addCommand({
             id: "view-graph",
-            name: VIEW_COMMAND,
+            name: CONFIG.VIEW_COMMAND,
             callback: (): Promise<void> => {
                 // Return the command promise so callers can observe completion.
                 return this.runView();
@@ -193,10 +213,20 @@ export default class CommitmentPlugin extends Plugin {
         // Register the graph update command.
         this.addCommand({
             id: "update-graph",
-            name: UPDATE_COMMAND,
+            name: CONFIG.UPDATE_COMMAND,
             callback: (): Promise<void> => {
                 // Return the command promise so callers can observe completion.
                 return this.runUpdate();
+            },
+        });
+
+        // Register the read-only diagnostics command.
+        this.addCommand({
+            id: "doctor",
+            name: CONFIG.DOCTOR_COMMAND,
+            callback: (): Promise<void> => {
+                // Return the command promise so callers can observe completion.
+                return this.runDoctor();
             },
         });
     }

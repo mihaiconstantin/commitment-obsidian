@@ -5,82 +5,116 @@
  * because the vault path cannot contain separators or Windows-illegal text.
  */
 
+import { CONFIG } from "../constants";
 import type { ContainerIdentity } from "../graph/types";
-import { DEFAULT_ID_STYLE, DEFAULT_PATTERNS, ID_STYLES, type IdStyle } from "./file-name";
+import { IdStyleCatalog, type IdStyle } from "./file-name";
 
 
 /** Characters that a file name cannot carry on every supported platform. */
 const UNSAFE_NAME_CHARACTERS: RegExp = /[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/g;
 
 
-/** Return the identifier text as a portable file name segment. */
-export function sanitizeFileName(id: string): string {
-    // Replace separators, illegal characters, and control characters.
-    const replaced: string = id.replace(UNSAFE_NAME_CHARACTERS, "-");
+/** Build file names and vault paths from one folder, pattern, and style. */
+export class ContainerPathBuilder {
+    /** Configured folder, or empty for the vault root. */
+    private readonly folder: string;
 
-    // Collapse every run of replacement dashes.
-    const collapsed: string = replaced.replace(/-+/g, "-");
+    /** Configured basename pattern, or empty for the kind's default. */
+    private readonly pattern: string;
 
-    // Trim trailing dots and spaces that some file systems drop.
-    return collapsed.replace(/[. ]+$/g, "");
-}
+    /** Identifier style applied inside the pattern. */
+    private readonly style: IdStyle;
 
+    /** Supported identifier styles used to render the placeholder. */
+    private readonly styles: IdStyleCatalog = new IdStyleCatalog();
 
-/** Return the target file name for one container identity. */
-export function containerFileName(
-    identity: ContainerIdentity,
-    pattern: string = DEFAULT_PATTERNS[identity.kind],
-    style: IdStyle = DEFAULT_ID_STYLE,
-): string {
-    // Reject an identifier with no usable file name text.
-    if (sanitizeFileName(identity.id) === "") {
-        // Report the unusable identifier.
-        throw new Error(`Container identifier '${identity.id}' has no usable file name.`);
+    /** Normalize the configured folder separators and edges. */
+    private normalizeFolder(): string {
+        // Replace Windows separators, split segments, drop empty ones, and rejoin.
+        return this.folder
+            .trim()
+            .replace(/\\/g, "/")
+            .split("/")
+            .filter((segment: string): boolean => segment !== "")
+            .join("/");
     }
 
-    // Render {{id}} with the styled identifier, falling back when the pattern is blank.
-    // Use a replacer so an identifier containing `$` stays literal.
-    const rendered: string = (pattern.trim() === "" ? DEFAULT_PATTERNS[identity.kind] : pattern)
-        .replace(/\{\{id\}\}/g, (): string => ID_STYLES[style].format(identity.id));
-
-    // Sanitize the rendered basename so a pattern cannot inject a separator.
-    const name: string = sanitizeFileName(rendered);
-
-    // Reject a pattern that renders no usable name.
-    if (name === "") {
-        // Report the unusable pattern.
-        throw new Error(`Container pattern '${pattern}' has no usable file name.`);
+    /** Construct a builder for one folder, pattern, and identifier style. */
+    public constructor(
+        folder: string = "",
+        pattern: string = "",
+        style: IdStyle = CONFIG.DEFAULT_ID_STYLE,
+    ) {
+        // Store the folder, pattern, and identifier style used by every call.
+        this.folder = folder;
+        this.pattern = pattern;
+        this.style = style;
     }
 
-    // Append the markdown extension to the rendered basename.
-    return `${name}.md`;
-}
+    /** Return the identifier text as a portable file name segment. */
+    public sanitize(id: string): string {
+        // Replace separators, illegal characters, and control characters.
+        const replaced: string = id.replace(UNSAFE_NAME_CHARACTERS, "-");
 
+        // Collapse every run of replacement dashes.
+        const collapsed: string = replaced.replace(/-+/g, "-");
 
-/** Return the vault path for one container in the configured folder. */
-export function containerPath(
-    identity: ContainerIdentity,
-    folder: string,
-    pattern: string = DEFAULT_PATTERNS[identity.kind],
-    style: IdStyle = DEFAULT_ID_STYLE,
-): string {
-    // Derive the file name before joining the folder.
-    const name: string = containerFileName(identity, pattern, style);
-
-    // Normalize the configured folder separators and edges.
-    const normalized: string = folder
-        .trim()
-        .replace(/\\/g, "/")
-        .split("/")
-        .filter((segment: string): boolean => segment !== "")
-        .join("/");
-
-    // Use the vault root when the folder is unset.
-    if (normalized === "") {
-        // Return the root-level file name.
-        return name;
+        // Trim trailing dots and spaces that some file systems drop.
+        return collapsed.replace(/[. ]+$/g, "");
     }
 
-    // Join the nested folder and the file name.
-    return `${normalized}/${name}`;
+    /** Return the target file name for one container identity. */
+    public fileName(identity: ContainerIdentity): string {
+        // Reject an identifier that cannot produce a file name.
+        if (this.sanitize(identity.id) === "") {
+            // Report the unusable identifier.
+            throw new Error(
+                `${CONFIG.KIND_LABELS[identity.kind]} \`${identity.id}\` cannot produce a file name.`,
+            );
+        }
+
+        // Choose the configured pattern, falling back to the kind's default when blank.
+        const pattern: string = this.pattern.trim() === ""
+            ? CONFIG.DEFAULT_PATTERNS[identity.kind]
+            : this.pattern;
+
+        // Render {{id}} with the styled identifier.
+        // Use a replacer so an identifier containing `$` stays literal.
+        const rendered: string = pattern.replace(
+            /\{\{id\}\}/g,
+            (): string => this.styles.format(this.style, identity.id),
+        );
+
+        // Sanitize the rendered basename so a pattern cannot inject a separator.
+        const name: string = this.sanitize(rendered);
+
+        // Reject a pattern that cannot produce a file name.
+        if (name === "") {
+            // Report the unusable pattern.
+            throw new Error(
+                `${CONFIG.KIND_LABELS[identity.kind]} pattern \`${this.pattern}\` cannot produce a file name.`,
+            );
+        }
+
+        // Append the markdown extension to the rendered basename.
+        return `${name}.md`;
+    }
+
+    /** Return the vault path for one container in the configured folder. */
+    public path(identity: ContainerIdentity): string {
+        // Derive the file name before joining the folder.
+        const name: string = this.fileName(identity);
+
+        // Normalize the configured folder separators and edges.
+        const normalized: string = this.normalizeFolder();
+
+        // Use the vault root when the folder is unset.
+        if (normalized === "") {
+            // Return the root-level file name.
+            return name;
+        }
+
+        // Join the nested folder and the file name.
+        return `${normalized}/${name}`;
+    }
 }

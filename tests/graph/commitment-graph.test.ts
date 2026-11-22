@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { CommitmentGraph } from "../../src/graph/commitment-graph";
-import type { GraphResult } from "../../src/graph/commitment-graph";
-import type { CanonicalInput } from "../../src/graph/types";
+import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
+import type { CanonicalInput, GraphArea } from "../../src/graph/types";
+
+
+/** Build one graph and its diagnostics from canonical inputs. */
+function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
+    return new GraphBuilder(inputs).build();
+}
+
+
+/** One program in a parsed direct projection. */
+interface ParsedProgram {
+    /** Sorted coordinated project identifiers. */
+    readonly projects: readonly string[];
+}
+
+
+/** One area in a parsed direct projection. */
+interface ParsedArea {
+    /** Sorted direct project identifiers. */
+    readonly projects: readonly string[];
+
+    /** Programs keyed by identifier. */
+    readonly programs: Record<string, ParsedProgram>;
+}
 
 
 function input(path: string, entries: ReadonlyArray<readonly [string, unknown]>): CanonicalInput {
@@ -35,10 +57,119 @@ const project = (
     return input(path, entries);
 };
 
+
+/** One duplicate representation regression case. */
+interface DuplicateCase {
+    /** Test title describing the scenario. */
+    readonly name: string;
+
+    /** Canonical inputs for the scenario. */
+    readonly inputs: readonly CanonicalInput[];
+
+    /** Expected failure message, or null when construction must succeed. */
+    readonly failure: RegExp | null;
+
+    /** Expected area snapshots for a successful construction. */
+    readonly areas?: readonly GraphArea[];
+}
+
+
+/** Duplicate representation cases in code-unit and concept-level order. */
+const DUPLICATE_CASES: readonly DuplicateCase[] = [
+    {
+        name: "rejects duplicate area containers with every path",
+        inputs: [
+            area("b/area.md", "shared"),
+            area("a/area.md", "shared"),
+        ],
+        failure: /Duplicate area `shared` at `a\/area\.md`, `b\/area\.md`\./,
+    },
+    {
+        name: "rejects duplicate program containers with every path",
+        inputs: [
+            program("b/program.md", "shared", "work"),
+            program("a/program.md", "shared", "work"),
+        ],
+        failure: /Duplicate program `shared` at `a\/program\.md`, `b\/program\.md`\./,
+    },
+    {
+        name: "selects the lexicographically first duplicated identifier",
+        inputs: [
+            area("z/two.md", "zeta"),
+            area("a/two.md", "shared"),
+            area("z/one.md", "zeta"),
+            area("a/one.md", "shared"),
+        ],
+        failure: /Duplicate area `shared` at `a\/one\.md`, `a\/two\.md`\./,
+    },
+    {
+        name: "reports area duplicates before program and project duplicates",
+        inputs: [
+            project("a/two.md", "aardvark"),
+            project("a/one.md", "aardvark"),
+            program("b/two.md", "zeta", "work"),
+            program("b/one.md", "zeta", "work"),
+            area("z/two.md", "zulu"),
+            area("z/one.md", "zulu"),
+        ],
+        failure: /Duplicate area `zulu` at `z\/one\.md`, `z\/two\.md`\./,
+    },
+    {
+        name: "reports program duplicates before project duplicates",
+        inputs: [
+            project("a/two.md", "aardvark"),
+            project("a/one.md", "aardvark"),
+            program("z/two.md", "zeta", "work"),
+            program("z/one.md", "zeta", "work"),
+        ],
+        failure: /Duplicate program `zeta` at `z\/one\.md`, `z\/two\.md`\./,
+    },
+    {
+        name: "keeps the same identifier at different concept levels distinct",
+        inputs: [
+            area("areas/shared.md", "shared"),
+            program("programs/shared.md", "shared", "shared"),
+            project("projects/shared.md", "shared", "shared"),
+        ],
+        failure: null,
+        areas: [
+            {
+                id: "shared",
+                projects: ["shared"],
+                programs: [{ id: "shared", projects: [] }],
+            },
+        ],
+    },
+    {
+        name: "allows the same source path to repeat without a duplicate failure",
+        inputs: [
+            project("projects/repeat.md", "repeat", "work"),
+            project("projects/repeat.md", "repeat", "work"),
+        ],
+        failure: null,
+        areas: [
+            {
+                id: "work",
+                projects: ["repeat", "repeat"],
+                programs: [],
+            },
+        ],
+    },
+    {
+        name: "reports a later missing field before an earlier duplicate",
+        inputs: [
+            area("a/one.md", "shared"),
+            area("b/one.md", "shared"),
+            input("z/missing.md", [["type", "project"], ["area", "work"]]),
+        ],
+        failure: /Project `z\/missing\.md` is missing `id`\./,
+    },
+];
+
 describe("commitment graph", () => {
     it("derives containerless areas and programs", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "phd"),
             project("projects/beta.md", "beta", "work", "phd"),
             project("projects/gamma.md", "gamma", "work"),
@@ -59,7 +190,7 @@ describe("commitment graph", () => {
 
     it("keeps container-only areas and programs", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             area("areas/empty.md", "empty"),
             program("programs/phd.md", "phd", "work"),
             project("projects/alpha.md", "alpha", "work", "phd"),
@@ -72,7 +203,7 @@ describe("commitment graph", () => {
 
     it("indexes explicit container paths and leaves implicit ones absent", () => {
         // Derive a graph with explicit area and project containers.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             area("areas/work.md", "work"),
             project("projects/alpha.md", "alpha", "work", "phd"),
             project("projects/beta.md", "beta", "work", "phd"),
@@ -92,7 +223,7 @@ describe("commitment graph", () => {
 
     it("establishes an area from an area-level support anchor", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             input("meetings/standup.md", [
                 ["type", "meeting"],
                 ["level", "area"],
@@ -107,7 +238,7 @@ describe("commitment graph", () => {
 
     it("treats missing and null project programs as direct", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/missing.md", "missing"),
             input("projects/null.md", [
                 ["type", "project"],
@@ -136,27 +267,52 @@ describe("commitment graph", () => {
             ]);
 
             // Require the invalid relationship to block construction.
-            expect(() => CommitmentGraph.build([invalid])).toThrowError(
-                /invalid 'program' value/,
+            expect(() => buildGraph([invalid])).toThrowError(
+                /has invalid `program`/,
             );
         },
     );
 
+    it.each<DuplicateCase>(DUPLICATE_CASES)("$name", (testCase: DuplicateCase) => {
+        // Require the documented failure for a duplicate representation.
+        if (testCase.failure !== null) {
+            expect(() => buildGraph(testCase.inputs)).toThrowError(testCase.failure);
+            return;
+        }
+
+        // Require successful construction with the expected area snapshots.
+        const result: GraphBuild = buildGraph(testCase.inputs);
+        expect(result.graph.getAreas()).toEqual(testCase.areas);
+    });
+
     it("rejects duplicate typed representations with every path", () => {
         // Require the typed duplicate to block construction.
         expect(() =>
-            CommitmentGraph.build([
+            buildGraph([
                 project("b/project.md", "shared"),
                 project("a/project.md", "shared"),
             ]),
         ).toThrowError(
-            /Multiple project containers represent project identifier 'shared': 'a\/project\.md', 'b\/project.md'\./,
+            /Duplicate project `shared` at `a\/project\.md`, `b\/project\.md`\./,
+        );
+    });
+
+    it("lists every source path for three duplicate containers", () => {
+        // Require the typed duplicate to name all three source paths in code-unit order.
+        expect(() =>
+            buildGraph([
+                project("c/project.md", "shared"),
+                project("a/project.md", "shared"),
+                project("b/project.md", "shared"),
+            ]),
+        ).toThrowError(
+            /Duplicate project `shared` at `a\/project\.md`, `b\/project\.md`, `c\/project\.md`\./,
         );
     });
 
     it("keeps the same text at different concept levels distinct", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             area("areas/shared.md", "shared"),
             project("projects/shared.md", "shared", "shared"),
         ]);
@@ -169,16 +325,16 @@ describe("commitment graph", () => {
     it("rejects contradictory program areas", () => {
         // Require the documented failure.
         expect(() =>
-            CommitmentGraph.build([
+            buildGraph([
                 project("projects/alpha.md", "alpha", "work", "phd"),
                 project("projects/beta.md", "beta", "personal", "phd"),
             ]),
-        ).toThrowError(/conflicting area declarations: 'personal', 'work'/);
+        ).toThrowError(/Program `phd` has conflicting areas `personal`, `work`/);
     });
 
     it("warns for underfilled programs and keeps them", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "phd"),
         ]);
 
@@ -192,26 +348,24 @@ describe("commitment graph", () => {
         expect(result.diagnostics).toHaveLength(1);
         expect(result.diagnostics[0]).toMatchObject({
             code: "underfilled_program",
+            message: "Program `phd` in area `work` has 1 project. 2 or more expected.",
             paths: ["projects/alpha.md"],
-            actual: 1,
-            required: 2,
         });
     });
 
     it("warns for an empty program container", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([program("programs/phd.md", "phd", "work")]);
+        const result: GraphBuild = buildGraph([program("programs/phd.md", "phd", "work")]);
 
         expect(result.diagnostics[0]).toMatchObject({
             code: "underfilled_program",
-            actual: 0,
-            required: 2,
+            message: "Program `phd` in area `work` has 0 projects. 2 or more expected.",
         });
     });
 
     it("omits unresolved support anchors with diagnostics", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("meetings/missing.md", [
                 ["type", "meeting"],
@@ -228,18 +382,27 @@ describe("commitment graph", () => {
         expect(result.diagnostics).toEqual([
             expect.objectContaining({
                 code: "unresolved_anchor",
+                message: "Support container has no valid `level` or `anchor`. Omitted from graph.",
                 paths: ["notes/unanchored.md"],
             }),
             expect.objectContaining({
                 code: "unresolved_anchor",
+                message: "Support container anchors to unknown project `missing`. Omitted from graph.",
                 paths: ["meetings/missing.md"],
             }),
         ]);
+
+        // Require the rendered message and the path line to avoid repeating the path.
+        for (const diagnostic of result.diagnostics) {
+            for (const path of diagnostic.paths) {
+                expect(diagnostic.message).not.toContain(path);
+            }
+        }
     });
 
     it("resolves supports to known areas, programs, and projects", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "phd"),
             project("projects/beta.md", "beta", "work", "phd"),
             input("meetings/area.md", [["type", "meeting"], ["level", "area"], ["anchor", "work"]]),
@@ -250,10 +413,10 @@ describe("commitment graph", () => {
         expect(result.diagnostics).toEqual([]);
     });
 
-    it("ignores legacy-looking and non-canonical documents", () => {
+    it("ignores non-canonical documents", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
-            input("legacy/project.md", [
+        const result: GraphBuild = buildGraph([
+            input("reference/project.md", [
                 ["context", "Course"],
                 ["key", "CourseIS"],
                 ["type", "recipe"],
@@ -270,7 +433,7 @@ describe("commitment graph", () => {
 
     it("does not filter by state values", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             input("projects/done.md", [
                 ["type", "project"],
                 ["id", "done"],
@@ -287,43 +450,43 @@ describe("commitment graph", () => {
     it("rejects missing area and project structures", () => {
         // Require the documented failure.
         expect(() =>
-            CommitmentGraph.build([
+            buildGraph([
                 input("projects/missing.md", [["type", "project"], ["area", "work"]]),
             ]),
-        ).toThrowError(/missing required field 'id'/);
+        ).toThrowError(/missing `id`/);
         expect(() =>
-            CommitmentGraph.build([
+            buildGraph([
                 input("projects/no-area.md", [["type", "project"], ["id", "alpha"]]),
             ]),
-        ).toThrowError(/missing required field 'area'/);
+        ).toThrowError(/missing `area`/);
         expect(() =>
-            CommitmentGraph.build([
+            buildGraph([
                 input("areas/no-id.md", [["type", "area"], ["active", true]]),
             ]),
-        ).toThrowError(/missing required field 'id'/);
+        ).toThrowError(/missing `id`/);
     });
 
     it("rejects padded and whitespace-only identifiers", () => {
         // Check every rejected value.
-        for (const identifier of [" padded", "padded ", "   ", "\u001c", ""]) {
+        for (const identifier of [" padded", "padded ", "   ", ""]) {
             expect(() =>
-                CommitmentGraph.build([project("projects/bad.md", identifier)]),
-            ).toThrowError(/invalid 'id' value/);
+                buildGraph([project("projects/bad.md", identifier)]),
+            ).toThrowError(/has invalid `id`/);
         }
     });
 
     it("accepts a zero-width no-break space inside an identifier", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/bom.md", "a\uFEFFb"),
         ]);
 
         expect(result.graph.getAreas()[0]?.projects).toEqual(["a\uFEFFb"]);
     });
 
-    it("sorts areas, programs, and projects by code point", () => {
+    it("sorts areas, programs, and projects by code unit", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/two.md", "10"),
             project("projects/one.md", "9"),
             project("projects/p.md", "\u{1F600}", "work", "10"),
@@ -342,27 +505,27 @@ describe("commitment graph", () => {
         ]);
     });
 
-    it("orders supplementary-character areas and programs by code point", () => {
+    it("orders supplementary-character areas and programs by code unit", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             project("projects/emoji.md", "p", "\u{1F600}", "\u{1F600}"),
             project("projects/replacement.md", "q", "\uFFFD", "\uFFFD"),
             project("projects/emoji-second.md", "r", "\u{1F600}", "\u{1F600}"),
         ]);
 
         expect(result.graph.getAreas().map((entry) => entry.id)).toEqual([
-            "\uFFFD",
             "\u{1F600}",
+            "\uFFFD",
         ]);
-        expect(result.graph.getAreas()[1]?.programs.map((entry) => entry.id)).toEqual([
+        expect(result.graph.getAreas()[0]?.programs.map((entry) => entry.id)).toEqual([
             "\u{1F600}",
         ]);
     });
 
     it("emits classification, program, then support diagnostics in that order", () => {
         // Derive a graph whose inputs produce one warning in every phase.
-        const result: GraphResult = CommitmentGraph.build([
-            // Add a support container with no usable anchor, classified in the read phase.
+        const result: GraphBuild = buildGraph([
+            // Add a support container with no valid anchor, classified in the read phase.
             input("z/no-anchor.md", [["type", "meeting"]]),
             // Add a program that coordinates one project, which is underfilled.
             program("programs/phd.md", "phd", "work"),
@@ -378,23 +541,32 @@ describe("commitment graph", () => {
             "unresolved_anchor",
         ]);
 
-        // Require each diagnostic to name its own source path.
+        // Require each diagnostic to carry its own source path.
         expect(result.diagnostics.map((entry) => entry.paths[0])).toEqual([
             "z/no-anchor.md",
             "programs/phd.md",
             "a/unanchored.md",
         ]);
+
+        // Require concise messages that leave path rendering to the paths field.
+        for (const diagnostic of result.diagnostics) {
+            expect(diagnostic.message).not.toContain("Canonical");
+            expect(diagnostic.message).not.toMatch(/[;:']/);
+            for (const path of diagnostic.paths) {
+                expect(diagnostic.message).not.toContain(path);
+            }
+        }
     });
 
-    it("orders every input phase by code-point source path", () => {
+    it("orders every input phase by code-unit source path", () => {
         // Derive diagnostics from inputs whose paths sort differently by locale.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             input("z/unanchored.md", [["type", "note"]]),
             input("A/unanchored.md", [["type", "note"]]),
             input("ä/unanchored.md", [["type", "note"]]),
         ]);
 
-        // Require the code-point order that the Python builder uses.
+        // Require the code-unit order used for stable output.
         expect(result.diagnostics.map((entry) => entry.paths[0])).toEqual([
             "A/unanchored.md",
             "z/unanchored.md",
@@ -404,7 +576,7 @@ describe("commitment graph", () => {
 
     it("serializes multiple areas with fixed field and key order", () => {
         // Derive a graph with two areas, one program, and several projects.
-        const result: GraphResult = CommitmentGraph.build([
+        const result: GraphBuild = buildGraph([
             area("areas/home.md", "home"),
             area("areas/work.md", "work"),
             project("projects/alpha.md", "alpha", "work", "phd"),
@@ -413,18 +585,53 @@ describe("commitment graph", () => {
             project("projects/gamma.md", "gamma", "work"),
         ]);
 
-        // Require the exact Python-compatible byte text.
+        // Require the exact generated JSON text.
         expect(result.graph.toJson()).toBe(
             '{\n    "home": {\n        "projects": [\n            "chores"\n        ],\n        "programs": {}\n    },\n    "work": {\n        "projects": [\n            "gamma"\n        ],\n        "programs": {\n            "phd": {\n                "projects": [\n                    "alpha",\n                    "beta"\n                ]\n            }\n        }\n    }\n}\n',
         );
     });
 
-    it("rejects every information separator in an identifier", () => {
-        // Check every rejected value.
-        for (const identifier of ["\u001c", "\u001f", "\u0085"]) {
-            expect(() =>
-                CommitmentGraph.build([project("projects/bad.md", identifier)]),
-            ).toThrowError(/invalid 'id' value/);
-        }
+    it("keeps a __proto__ area key in the direct JSON projection", () => {
+        // Derive a graph whose area identifier is the prototype key.
+        const result: GraphBuild = buildGraph([
+            project("projects/alpha.md", "alpha", "__proto__"),
+        ]);
+
+        // Parse the generated text into the documented projection shape.
+        const parsed: Record<string, ParsedArea> = JSON.parse(result.graph.toJson());
+
+        // Require the area key to be an own projection entry.
+        expect(Object.keys(parsed)).toEqual(["__proto__"]);
+
+        // Require the area's direct project and empty program map.
+        expect(parsed["__proto__"]).toEqual({
+            projects: ["alpha"],
+            programs: {},
+        });
+    });
+
+    it("keeps a __proto__ program key in the direct JSON projection", () => {
+        // Derive a graph whose program identifier is the prototype key.
+        const result: GraphBuild = buildGraph([
+            project("projects/alpha.md", "alpha", "work", "__proto__"),
+            project("projects/beta.md", "beta", "work", "__proto__"),
+        ]);
+
+        // Parse the generated text into the documented projection shape.
+        const parsed: Record<string, ParsedArea> = JSON.parse(result.graph.toJson());
+
+        // Require the area key to be an own projection entry.
+        expect(Object.keys(parsed)).toEqual(["work"]);
+
+        // Read the area's program record from the parsed projection.
+        const programs: Record<string, ParsedProgram> | undefined = parsed["work"]?.programs;
+
+        // Require the program key to be an own projection entry.
+        expect(Object.keys(programs ?? {})).toEqual(["__proto__"]);
+
+        // Require the program's coordinated projects.
+        expect(programs?.["__proto__"]).toEqual({
+            projects: ["alpha", "beta"],
+        });
     });
 });

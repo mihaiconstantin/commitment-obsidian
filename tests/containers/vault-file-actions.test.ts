@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App } from "obsidian";
-import { DEFAULT_PATTERNS } from "../../src/containers/file-name";
-import { CommitmentGraph } from "../../src/graph/commitment-graph";
+import { CONFIG } from "../../src/constants";
+import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
+import type { CommitmentGraph } from "../../src/graph/commitment-graph";
 import type { ContainerCreationSettings } from "../../src/settings/settings";
 import type { CanonicalInput, ContainerIdentity } from "../../src/graph/types";
-import { isPluginFailure } from "../../src/plugin-failure";
 import { VaultContainerFileActions } from "../../src/containers/vault-file-actions";
 import { FakeVault } from "../support/fake-vault";
 
@@ -31,11 +31,17 @@ const project = (path: string, id: string): CanonicalInput =>
     ]);
 
 
+/** Build one graph and its diagnostics from canonical inputs. */
+function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
+    return new GraphBuilder(inputs).build();
+}
+
+
 /** Return creation settings with the shipped pattern defaults. */
 function creation(
     templatePath: string = "",
     folderPath: string = "",
-    pattern: string = DEFAULT_PATTERNS.project,
+    pattern: string = CONFIG.DEFAULT_PATTERNS.project,
 ): ContainerCreationSettings {
     return { templatePath, folderPath, pattern };
 }
@@ -52,8 +58,7 @@ async function failureOf(action: Promise<void>): Promise<string> {
         await action;
         throw new Error("expected the action to reject");
     } catch (error) {
-        // Require a structured plugin failure.
-        expect(isPluginFailure(error)).toBe(true);
+        // Return the readable failure message.
         return error instanceof Error ? error.message : String(error);
     }
 }
@@ -73,7 +78,7 @@ beforeEach(() => {
 describe("vault container file actions", () => {
     it("reports open for indexed containers and create for implicit ones", () => {
         // Build a graph with explicit area, program, and project containers.
-        const graph: CommitmentGraph = CommitmentGraph.build([
+        const graph: CommitmentGraph = buildGraph([
             input("areas/work.md", [
                 ["type", "area"],
                 ["id", "work"],
@@ -115,7 +120,7 @@ describe("vault container file actions", () => {
         // Build a vault and graph with one indexed project.
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
-        const graph: CommitmentGraph = CommitmentGraph.build([project("projects/alpha.md", "alpha")]).graph;
+        const graph: CommitmentGraph = buildGraph([project("projects/alpha.md", "alpha")]).graph;
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY);
 
         await adapter.activate(identity("alpha"));
@@ -132,7 +137,7 @@ describe("vault container file actions", () => {
             "---\ntype: note\nstatus: planning # keep\n---\n# {{title}}\nCreated {{date}} at {{time}}.\n";
         const vault: FakeVault = new FakeVault({ "Templates/project.md": template });
         const app: App = new App(vault);
-        const graph: CommitmentGraph = CommitmentGraph.build([]).graph;
+        const graph: CommitmentGraph = buildGraph([]).graph;
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
             graph,
@@ -165,7 +170,7 @@ describe("vault container file actions", () => {
         // Compose the adapter over a custom pattern and title case.
         const vault: FakeVault = new FakeVault({});
         const app: App = new App(vault);
-        const graph: CommitmentGraph = CommitmentGraph.build([]).graph;
+        const graph: CommitmentGraph = buildGraph([]).graph;
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
             graph,
@@ -189,7 +194,7 @@ describe("vault container file actions", () => {
         // Occupy the derived target path.
         const vault: FakeVault = new FakeVault({ "Project - ghost.md": "# Existing\n" });
         const app: App = new App(vault);
-        const graph: CommitmentGraph = CommitmentGraph.build([]).graph;
+        const graph: CommitmentGraph = buildGraph([]).graph;
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY);
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
@@ -207,7 +212,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => creation("Templates/missing.md", "Projects"),
         );
 
@@ -226,7 +231,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => creation("Templates/project.md", "Projects"),
         );
 
@@ -245,7 +250,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => creation("", "Commitments"),
         );
 
@@ -261,7 +266,7 @@ describe("vault container file actions", () => {
         // Build a graph and vault with one indexed project.
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
-        const graph: CommitmentGraph = CommitmentGraph.build([project("projects/alpha.md", "alpha")]).graph;
+        const graph: CommitmentGraph = buildGraph([project("projects/alpha.md", "alpha")]).graph;
 
         // Remove the file between the build and the action.
         vault.remove("projects/alpha.md");
@@ -271,7 +276,7 @@ describe("vault container file actions", () => {
 
         // Require the vanished path and no write.
         expect(message).toContain("projects/alpha.md");
-        expect(message).toContain("no longer exists");
+        expect(message).toContain("is missing");
         expect(vault.calls.creates).toEqual([]);
         expect(app.workspace.opened).toEqual([]);
     });
@@ -280,7 +285,7 @@ describe("vault container file actions", () => {
         // Build a graph and vault with one indexed project.
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
-        const graph: CommitmentGraph = CommitmentGraph.build([project("projects/alpha.md", "alpha")]).graph;
+        const graph: CommitmentGraph = buildGraph([project("projects/alpha.md", "alpha")]).graph;
 
         // Replace the file with a folder between the build and the action.
         vault.remove("projects/alpha.md");
@@ -303,7 +308,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => creation("Templates/folder.md", "Projects"),
         );
 
@@ -323,7 +328,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => creation("", "Created/Projects"),
         );
 
@@ -342,7 +347,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => creation("", ""),
         );
 
@@ -361,7 +366,7 @@ describe("vault container file actions", () => {
         const app: App = new App(vault);
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             app,
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => EMPTY,
         );
 
@@ -371,7 +376,7 @@ describe("vault container file actions", () => {
 
         // Require the composed target and the invalid identity reason.
         expect(message).toContain("Project - alpha.md");
-        expect(message).toContain("invalid 'id'");
+        expect(message).toContain("for `id`");
         expect(vault.calls.creates).toEqual([]);
         expect(vault.calls.createFolders).toEqual([]);
     });
@@ -381,7 +386,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault();
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             new App(vault),
-            CommitmentGraph.build([]).graph,
+            buildGraph([]).graph,
             () => EMPTY,
         );
 
@@ -390,7 +395,7 @@ describe("vault container file actions", () => {
         );
 
         // Require the path-naming failure without a write.
-        expect(message).toContain("no usable file name");
+        expect(message).toContain("cannot produce a file name");
         expect(vault.calls.creates).toEqual([]);
     });
 });

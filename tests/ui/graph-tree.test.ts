@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Notice } from "obsidian";
+
 import { GraphTree } from "../../src/ui/graph-tree";
+import { CONFIG } from "../../src/constants";
 import type { ContainerFileActions } from "../../src/containers/container-file-actions";
 import type { GraphArea } from "../../src/graph/types";
+import type { AppearanceSettings, GraphSort } from "../../src/settings/settings";
 
 
 const AREAS: readonly GraphArea[] = [
@@ -15,45 +19,106 @@ const AREAS: readonly GraphArea[] = [
 function mount(
     areas: readonly GraphArea[] = AREAS,
     actions: ContainerFileActions | null = null,
+    sort: GraphSort = "count",
+    appearance: AppearanceSettings = CONFIG.DEFAULT_SETTINGS.appearance,
 ): { host: HTMLElement; tree: GraphTree } {
     // Create the host element.
     const host: HTMLElement = document.createElement("div");
 
-    // Attach it so focus and listeners behave like the modal.
+    // Attach it so focus and native folding behave like the modal.
     document.body.append(host);
 
     // Mount the tree and return its boundary.
-    return { host, tree: GraphTree.mount(host, areas, actions) };
+    return { host, tree: new GraphTree(host, areas, sort, actions, appearance) };
 }
 
 
-/** Type a query and let the debounced render run. */
+/** Return one area's native folding element. */
+function areaDetails(host: HTMLElement, id: string = "work"): HTMLDetailsElement {
+    // Read the built area element by its stable key.
+    return host.querySelector(
+        `details.cg-row[data-cg-key="area:${id}"]`,
+    ) as HTMLDetailsElement;
+}
+
+
+/** Return one program's native folding element. */
+function programDetails(
+    host: HTMLElement,
+    id: string = "phd",
+    area: string = "work",
+): HTMLDetailsElement {
+    // Read the built program element by its stable key.
+    return host.querySelector(
+        `details.cg-program[data-cg-key="program:${area}/${id}"]`,
+    ) as HTMLDetailsElement;
+}
+
+
+/** Return one project row by its visible identifier. */
+function projectRow(host: HTMLElement, id: string): HTMLElement {
+    // Find the leaf label that carries the identifier.
+    const name: Element | undefined = Array.from(host.querySelectorAll(".cg-leaf .cg-nm")).find(
+        (node: Element): boolean => node.textContent === id,
+    );
+    if (name === undefined) {
+        // Report a missing test fixture.
+        throw new Error(`Missing project row: ${id}`);
+    }
+
+    // Return the row that owns the leaf.
+    return name.closest(".cg-row") as HTMLElement;
+}
+
+
+/** Return one native summary element. */
+function summary(details: HTMLDetailsElement): HTMLElement {
+    // Read the only summary in the details.
+    return details.querySelector("summary") as HTMLElement;
+}
+
+
+/** Type a query and apply it synchronously. */
 function search(host: HTMLElement, value: string): void {
     // Read the search field.
     const input: HTMLInputElement = host.querySelector(".cg-search input") as HTMLInputElement;
 
-    // Type the query.
+    // Type the query and dispatch the immediate input event.
     input.value = value;
     input.dispatchEvent(new Event("input", { bubbles: true }));
-
-    // Run the debounced render immediately.
-    vi.advanceTimersByTime(200);
 }
 
 
-/** Return the rendered row texts. */
+/** Return the rendered row texts in DOM order. */
 function rowTexts(host: HTMLElement): readonly string[] {
     // Read every row label.
     return Array.from(host.querySelectorAll(".cg-nm"), (node: Element): string => node.textContent ?? "");
 }
 
 
-beforeEach(() => {
-    // Control the debounce timer.
-    vi.useFakeTimers();
+/** Return the file icon labels that are not hidden by a filter. */
+function visibleFileLabels(host: HTMLElement): readonly string[] {
+    // Read the icons outside every hidden row.
+    return Array.from(host.querySelectorAll(".cg-file"))
+        .filter((node: Element): boolean => node.closest("[hidden]") === null)
+        .map((node: Element): string => node.getAttribute("aria-label") ?? "");
+}
 
-    // Start every test from the default order.
-    window.localStorage.clear();
+
+/** Install one clipboard implementation, or remove the clipboard. */
+function setClipboard(writeText?: (text: string) => Promise<void>): void {
+    // Replace the surface clipboard for this test.
+    Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: writeText === undefined ? undefined : { writeText },
+    });
+}
+
+
+beforeEach(() => {
+    // Start every test with the same notices and no clipboard.
+    Notice.instances = [];
+    setClipboard();
 
     // Drop any previous host and its listeners.
     document.body.replaceChildren();
@@ -61,213 +126,395 @@ beforeEach(() => {
 
 
 describe("graph tree", () => {
-    it("renders search, sort, and expand controls", () => {
+    it("renders the toolbar chrome", () => {
         // Mount the tree.
-        const { host, tree } = mount();
+        const { host } = mount();
 
-        expect(host.querySelector(".cg-search input")).not.toBeNull();
-        expect(host.querySelector(".cg-select")).not.toBeNull();
-        expect(host.querySelectorAll(".cg-btn")).toHaveLength(1);
-        expect(host.querySelector(".cg-toggle")).not.toBeNull();
+        expect(host.querySelector(".cg-tools")).not.toBeNull();
+        expect(host.querySelector(".cg-search")).not.toBeNull();
+        expect(host.querySelector(".cg-search-icon svg")?.getAttribute("data-icon")).toBe("search");
+        expect(host.querySelector(".cg-chev svg")?.getAttribute("data-icon")).toBe("chevron-down");
+        expect(host.querySelector(".cg-kbd")?.textContent).toBe("/");
+
+        // Require the expand control to start with the collapse action.
+        const toggle: HTMLElement = host.querySelector(".cg-toggle") as HTMLElement;
+        expect(toggle.getAttribute("aria-label")).toBe("Collapse all");
+        expect(toggle.querySelector("svg")?.getAttribute("data-icon")).toBe("chevrons-down-up");
+
         expect(host.querySelector(".cg-stats")?.textContent).toBe(
             "2 areas · 4 projects · 1 program",
         );
-
-        // Clean up the listeners.
-        tree.dispose();
+        expect(host.querySelector(".cg-list")?.classList.contains("commitment-modal__scroll")).toBe(true);
+        expect(host.querySelector(".cg-gutter")).toBeNull();
+        expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(true);
     });
 
-    it("starts expanded and orders the largest area first", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
+    it("uses singular count labels for a one-area graph", () => {
+        // Mount a graph with one area and one direct project.
+        const { host } = mount([
+            { id: "work", projects: ["alpha"], programs: [] },
+        ]);
 
-        // Require the largest area and all of its contents first.
+        // Require singular area and project labels.
+        expect(host.querySelector(".cg-stats")?.textContent).toBe(
+            "1 area · 1 project · 0 programs",
+        );
+
+        // Require the filtered total to use the singular project label.
+        search(host, "alpha");
+        expect(host.querySelector(".cg-stats")?.textContent).toBe("1 of 1 project");
+    });
+
+    it("starts with every area and program expanded in count order", () => {
+        // Mount the tree.
+        const { host } = mount();
+
+        // Require native details in the open state.
+        expect(areaDetails(host, "work").open).toBe(true);
+        expect(areaDetails(host, "home").open).toBe(true);
+        expect(programDetails(host).open).toBe(true);
+
+        // Require the largest area first with all contents visible.
         expect(rowTexts(host)).toEqual(["work", "alpha", "beta", "phd", "gamma", "home", "chores"]);
-
-        // Clean up the listeners.
-        tree.dispose();
     });
 
-    it("filters by identifier and highlights the match", () => {
+    it("anchors fold tooltips to the identifier", () => {
         // Mount the tree.
-        const { host, tree } = mount();
+        const { host } = mount();
 
-        // Type a query.
+        // Read every fold row and its expected identifier.
+        const rows: readonly (readonly [HTMLDetailsElement, string])[] = [
+            [areaDetails(host, "work"), "work"],
+            [areaDetails(host, "home"), "home"],
+            [programDetails(host), "phd"],
+        ];
+
+        // Require each summary to label itself through its identifier.
+        for (const [details, text] of rows) {
+            // Read the summary and its visible name.
+            const line: HTMLElement = summary(details);
+            const name: HTMLElement = line.querySelector(".cg-nm") as HTMLElement;
+
+            // Keep the tooltip off the full-width summary.
+            expect(line.hasAttribute("aria-label")).toBe(false);
+
+            // Resolve the summary name through the visible identifier.
+            expect(line.getAttribute("aria-labelledby")).toBe(name.id);
+
+            // Anchor the tooltip to the identifier itself.
+            expect(name.getAttribute("aria-label")).toBe(text);
+        }
+
+        // Require each label to have its own identifier.
+        const ids: readonly (string | undefined)[] = rows.map(
+            ([details]): string | undefined => summary(details).querySelector(".cg-nm")?.id,
+        );
+        expect(new Set(ids).size).toBe(rows.length);
+    });
+
+    it("applies the default accents to the tree host", () => {
+        // Mount the tree with the shipped defaults.
+        const { host } = mount();
+
+        // Require the settings defaults on the host that owns the variables.
+        expect(host.style.getPropertyValue("--cg-area")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.area,
+        );
+        expect(host.style.getPropertyValue("--cg-program")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.program,
+        );
+    });
+
+    it("applies stored accents to the tree host", () => {
+        // Mount the tree with one override per supported level.
+        const { host } = mount(AREAS, null, "count", {
+            area: "#112233",
+            program: "#445566",
+        });
+
+        // Require every override on the host that owns the CSS variables.
+        expect(host.style.getPropertyValue("--cg-area")).toBe("#112233");
+        expect(host.style.getPropertyValue("--cg-program")).toBe("#445566");
+    });
+
+    it("reserves a count column for the widest area", () => {
+        // Build one area with a two-digit project count.
+        const projects: readonly string[] = Array.from(
+            { length: 12 },
+            (_value: unknown, index: number): string => `p${index}`,
+        );
+        const areas: readonly GraphArea[] = [
+            { id: "work", projects, programs: [] },
+            { id: "home", projects: ["chores"], programs: [] },
+        ];
+
+        // Mount the tree.
+        const { host } = mount(areas);
+
+        // Require a two-character column for every count.
+        expect(host.style.getPropertyValue("--cg-count-ch")).toBe("2ch");
+    });
+
+    it("orders areas by identifier when name order is configured", () => {
+        // Mount the same areas in name order.
+        const { host } = mount(AREAS, null, "name");
+
+        // Require the alphabetical area order.
+        expect(Array.from(
+            host.querySelectorAll("details.cg-row[data-cg-key^='area:'] > summary .cg-node .cg-nm"),
+            (node: Element): string => node.textContent ?? "",
+        )).toEqual(["home", "work"]);
+    });
+
+    it("folds and reopens an area through its native summary", () => {
+        // Mount the tree.
+        const { host } = mount();
+        const area: HTMLDetailsElement = areaDetails(host);
+
+        // Fold the area without rebuilding its rows.
+        summary(area).click();
+        expect(area.open).toBe(false);
+        expect(projectRow(host, "alpha")).not.toBeNull();
+
+        // Reopen the same element.
+        summary(area).click();
+        expect(area.open).toBe(true);
+    });
+
+    it("folds and reopens a program without folding its area", () => {
+        // Mount the tree.
+        const { host } = mount();
+        const area: HTMLDetailsElement = areaDetails(host);
+        const program: HTMLDetailsElement = programDetails(host);
+
+        // Fold the program.
+        summary(program).click();
+        expect(program.open).toBe(false);
+        expect(area.open).toBe(true);
+        expect(projectRow(host, "gamma")).not.toBeNull();
+
+        // Reopen the same program.
+        summary(program).click();
+        expect(program.open).toBe(true);
+    });
+
+    it("collapses and expands every area and program through one control", () => {
+        // Mount the tree.
+        const { host } = mount();
+        const toggle: HTMLElement = host.querySelector(".cg-toggle") as HTMLElement;
+        const work: HTMLDetailsElement = areaDetails(host, "work");
+        const home: HTMLDetailsElement = areaDetails(host, "home");
+        const program: HTMLDetailsElement = programDetails(host);
+
+        // A native fold updates the control before any tree action.
+        summary(work).click();
+        expect(toggle.getAttribute("aria-label")).toBe("Expand all");
+        summary(work).click();
+        expect(toggle.getAttribute("aria-label")).toBe("Collapse all");
+
+        // Collapse every area and keep the program state.
+        toggle.click();
+        expect(work.open).toBe(false);
+        expect(home.open).toBe(false);
+        expect(program.open).toBe(true);
+        expect(toggle.getAttribute("aria-label")).toBe("Expand all");
+        expect(toggle.querySelector("svg")?.getAttribute("data-icon")).toBe("chevrons-up-down");
+
+        // Expand every area and program.
+        toggle.click();
+        expect(work.open).toBe(true);
+        expect(home.open).toBe(true);
+        expect(program.open).toBe(true);
+        expect(toggle.getAttribute("aria-label")).toBe("Collapse all");
+    });
+
+    it("keeps the program open when collapse all folds the areas", () => {
+        // Mount the tree without folding anything.
+        const { host } = mount();
+        const toggle: HTMLElement = host.querySelector(".cg-toggle") as HTMLElement;
+        const work: HTMLDetailsElement = areaDetails(host, "work");
+        const program: HTMLDetailsElement = programDetails(host);
+
+        // Collapse the areas and require the program state to survive.
+        toggle.click();
+        expect(work.open).toBe(false);
+        expect(program.open).toBe(true);
+
+        // Reopen the work area and require the coordinated project to show.
+        summary(work).click();
+        expect(work.open).toBe(true);
+        expect(program.open).toBe(true);
+        expect(projectRow(host, "gamma").hidden).toBe(false);
+    });
+
+    it("filters with hidden rows, highlights, counts, and stats immediately", () => {
+        // Mount the tree.
+        const { host } = mount();
+        const workName: Element = areaDetails(host).querySelector("summary .cg-node .cg-nm") as Element;
+
+        // Search for the coordinated project.
         search(host, "gamma");
 
-        // Require only the matching branch.
-        expect(rowTexts(host)).toEqual(["work", "phd", "gamma"]);
-
-        // Require the visible match to be highlighted.
-        expect(host.querySelector(".cg-mark")?.textContent).toBe("gamma");
         expect(host.querySelector(".cg-stats")?.textContent).toBe("1 of 4 projects");
+        expect(areaDetails(host, "work").hidden).toBe(false);
+        expect(areaDetails(host, "home").hidden).toBe(true);
+        expect(projectRow(host, "alpha").hidden).toBe(true);
+        expect(projectRow(host, "beta").hidden).toBe(true);
+        expect(projectRow(host, "gamma").hidden).toBe(false);
+        expect(programDetails(host).hidden).toBe(false);
 
-        // Clean up the listeners.
-        tree.dispose();
+        // Require one highlight in the existing name elements.
+        expect(projectRow(host, "gamma").querySelector(".cg-mark")?.textContent).toBe("gamma");
+        expect(host.querySelectorAll(".cg-mark")).toHaveLength(1);
+
+        // Require the built name element to survive filtering.
+        expect(areaDetails(host).querySelector("summary .cg-node .cg-nm")).toBe(workName);
+
+        // Move the highlight when the query changes.
+        search(host, "alpha");
+        expect(projectRow(host, "gamma").querySelector(".cg-mark")).toBeNull();
+        expect(projectRow(host, "alpha").querySelector(".cg-mark")?.textContent).toBe("alpha");
     });
 
-    it("reports an empty result instead of a blank list", () => {
+    it("keeps a matching area visible while filtering its direct projects", () => {
         // Mount the tree.
-        const { host, tree } = mount();
+        const { host } = mount();
+
+        // Search for the area name.
+        search(host, "work");
+
+        // Require only the program project and the area highlight.
+        expect(host.querySelector(".cg-stats")?.textContent).toBe("1 of 4 projects");
+        expect(areaDetails(host, "work").hidden).toBe(false);
+        expect(areaDetails(host, "home").hidden).toBe(true);
+        expect(projectRow(host, "alpha").hidden).toBe(true);
+        expect(projectRow(host, "beta").hidden).toBe(true);
+        expect(projectRow(host, "gamma").hidden).toBe(false);
+        expect(programDetails(host).hidden).toBe(false);
+        expect(areaDetails(host).querySelector("summary .cg-mark")?.textContent).toBe("work");
+    });
+
+    it("shows only a matching program's projects", () => {
+        // Mount the tree.
+        const { host } = mount();
+
+        // Search for the program name.
+        search(host, "phd");
+
+        expect(host.querySelector(".cg-stats")?.textContent).toBe("1 of 4 projects");
+        expect(projectRow(host, "alpha").hidden).toBe(true);
+        expect(projectRow(host, "beta").hidden).toBe(true);
+        expect(projectRow(host, "gamma").hidden).toBe(false);
+        expect(programDetails(host).hidden).toBe(false);
+    });
+
+    it("reports an empty result with the empty message and zero stats", () => {
+        // Mount the tree.
+        const { host } = mount();
 
         // Search for a missing identifier.
         search(host, "nothing-here");
 
-        // Require the empty message.
-        expect(host.querySelector(".cg-empty")?.textContent).toContain("No area");
-
-        // Clean up the listeners.
-        tree.dispose();
+        // Require the empty message instead of visible areas.
+        expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(false);
+        expect(host.querySelector(".cg-empty")?.textContent).toContain("No match");
+        expect(areaDetails(host, "work").hidden).toBe(true);
+        expect(areaDetails(host, "home").hidden).toBe(true);
+        expect(host.querySelector(".cg-stats")?.textContent).toBe("0 of 4 projects");
     });
 
-    it("sorts by identifier when the order changes", () => {
+    it("focuses the search field through the exposed handle", () => {
         // Mount the tree.
         const { host, tree } = mount();
+        const input: HTMLElement = host.querySelector(".cg-search input") as HTMLElement;
 
-        // Select the identifier order.
-        const select: HTMLSelectElement = host.querySelector(".cg-select") as HTMLSelectElement;
-        select.value = "name";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+        expect(tree.hasSearchFocus()).toBe(false);
 
-        // Require the alphabetical area order.
-        expect(rowTexts(host)[0]).toBe("home");
+        // Focus the field the way the modal keymap does.
+        tree.focusSearch();
+        expect(document.activeElement).toBe(input);
+        expect(tree.hasSearchFocus()).toBe(true);
 
-        // Clean up the listeners.
-        tree.dispose();
+        // Release focus without clearing the input.
+        input.blur();
+        expect(tree.hasSearchFocus()).toBe(false);
     });
 
-    it("remembers the sort order across mounts", () => {
-        // Mount the tree and choose the identifier order.
-        const first = mount();
-        const select: HTMLSelectElement = first.host.querySelector(".cg-select") as HTMLSelectElement;
-        select.value = "name";
-        select.dispatchEvent(new Event("change", { bubbles: true }));
-        first.tree.dispose();
-
-        // Mount a second tree and require the remembered order.
-        const second = mount();
-        expect((second.host.querySelector(".cg-select") as HTMLSelectElement).value).toBe("name");
-        expect(second.host.querySelector(".cg-node .cg-nm")?.textContent).toBe("home");
-
-        // Clean up the listeners.
-        second.tree.dispose();
-    });
-
-    it("folds an area and reopens it", () => {
+    it("preserves the native open state through a query and restores it when cleared", () => {
         // Mount the tree.
-        const { host, tree } = mount();
+        const { host } = mount();
+        const work: HTMLDetailsElement = areaDetails(host, "work");
+        const home: HTMLDetailsElement = areaDetails(host, "home");
+        const program: HTMLDetailsElement = programDetails(host);
 
-        // Fold the first area.
-        (host.querySelector(".cg-node") as HTMLElement).click();
-        expect(host.querySelector(".cg-node")?.getAttribute("aria-expanded")).toBe("false");
-        // The folded area row remains, plus the other area and its project.
-        expect(host.querySelectorAll(".cg-row")).toHaveLength(3);
+        // Fold the program, one area, and the other area.
+        summary(program).click();
+        summary(home).click();
+        summary(work).click();
+        expect(work.open).toBe(false);
+        expect(home.open).toBe(false);
+        expect(program.open).toBe(false);
 
-        // Reopen the first area: 2 areas plus 3 projects and 1 program.
-        (host.querySelector(".cg-node") as HTMLElement).click();
-        expect(host.querySelectorAll(".cg-row")).toHaveLength(6);
+        // A query opens every visible area and program.
+        search(host, "gamma");
+        expect(work.open).toBe(true);
+        expect(program.open).toBe(true);
+        expect(home.hidden).toBe(true);
+        expect(home.open).toBe(false);
 
-        // Clean up the listeners.
-        tree.dispose();
+        // Clear the query and restore the captured state.
+        search(host, "");
+        expect(work.open).toBe(false);
+        expect(home.open).toBe(false);
+        expect(program.open).toBe(false);
+        expect(work.hidden).toBe(false);
+        expect(home.hidden).toBe(false);
     });
 
-    it("folds a program without folding its area", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-
-        // Fold the program.
-        (host.querySelector(".cg-node--program") as HTMLElement).click();
-
-        // Require the program project to disappear and the area to stay open.
-        expect(rowTexts(host)).toEqual(["work", "alpha", "beta", "phd", "home", "chores"]);
-        expect(host.querySelector(".cg-node")?.getAttribute("aria-expanded")).toBe("true");
-
-        // Clean up the listeners.
-        tree.dispose();
-    });
-
-    it("collapses and expands every area through one control", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-        const toggle: HTMLElement = host.querySelector(".cg-toggle") as HTMLElement;
-
-        // The control collapses while the tree is open.
-        expect(toggle.getAttribute("aria-label")).toBe("Collapse all");
-
-        // Collapse every area.
-        toggle.click();
-        expect(rowTexts(host)).toEqual(["work", "home"]);
-
-        // The control now expands because nothing is open.
-        expect(toggle.getAttribute("aria-label")).toBe("Expand all");
-
-        // Expand every area: 2 areas plus 3 projects and 1 program.
-        toggle.click();
-        expect(host.querySelectorAll(".cg-row")).toHaveLength(6);
-
-        // The control returns to the collapse action.
-        expect(toggle.getAttribute("aria-label")).toBe("Collapse all");
-
-        // Clean up the listeners.
-        tree.dispose();
-    });
-
-    it("offers the expand action when only one program is folded", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-        const toggle: HTMLElement = host.querySelector(".cg-toggle") as HTMLElement;
-
-        // Fold the single program by activating its row.
-        (host.querySelector(".cg-node--program") as HTMLElement).click();
-
-        // The control must expand rather than restart the collapse.
-        expect(toggle.getAttribute("aria-label")).toBe("Expand all");
-
-        // Expand everything again.
-        toggle.click();
-        expect(host.querySelectorAll(".cg-row")).toHaveLength(6);
-
-        // Clean up the listeners.
-        tree.dispose();
-    });
-
-    it("keeps keyboard focus on a toggle after folding", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-
-        // Focus the first area toggle and fold it.
-        const area: HTMLElement = host.querySelector(".cg-node") as HTMLElement;
-        area.focus();
-        area.click();
-
-        // Require focus to survive the re-render.
-        expect(document.activeElement).toBe(host.querySelector(".cg-node"));
-
-        // Clean up the listeners.
-        tree.dispose();
-    });
-
-    it("copies an identifier and confirms it", async () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-
-        // Record the clipboard writes.
+    it("copies an identifier and reports success through a Notice", async () => {
+        // Record every clipboard write.
         const written: string[] = [];
-        Object.defineProperty(navigator, "clipboard", {
-            configurable: true,
-            value: { writeText: async (text: string): Promise<void> => { written.push(text); } },
+        setClipboard(async (text: string): Promise<void> => {
+            written.push(text);
         });
 
-        // Copy the first direct project.
-        (host.querySelectorAll(".cg-leaf")[0] as HTMLElement).click();
+        // Mount the tree and copy the first direct project.
+        const { host } = mount();
+        (host.querySelector(".cg-leaf") as HTMLElement).click();
         await Promise.resolve();
         await Promise.resolve();
 
         expect(written).toEqual(["alpha"]);
-        expect(host.querySelector(".cg-toast")?.textContent).toBe("Copied alpha");
+        expect(Notice.instances.map((notice: Notice): string => notice.message)).toEqual([
+            "Copied alpha",
+        ]);
+    });
 
-        // Clean up the listeners.
-        tree.dispose();
+    it("reports a rejected copy through a Notice", async () => {
+        // Reject every clipboard write.
+        setClipboard((): Promise<void> => Promise.reject(new Error("denied")));
+
+        // Mount the tree and copy the first direct project.
+        const { host } = mount();
+        (host.querySelector(".cg-leaf") as HTMLElement).click();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(Notice.instances.map((notice: Notice): string => notice.message)).toEqual([
+            "Copy failed",
+        ]);
+    });
+
+    it("reports an unavailable clipboard through a Notice", () => {
+        // Mount the tree without a clipboard.
+        const { host } = mount();
+
+        // Copy the first direct project.
+        (host.querySelector(".cg-leaf") as HTMLElement).click();
+
+        expect(Notice.instances.map((notice: Notice): string => notice.message)).toEqual([
+            "Copy failed",
+        ]);
     });
 
     it("renders one file icon per area, program, and project row", () => {
@@ -278,7 +525,7 @@ describe("graph tree", () => {
         };
 
         // Mount the tree with the seam.
-        const { host, tree } = mount(AREAS, actions);
+        const { host } = mount(AREAS, actions);
 
         // Require one icon per commitment row in render order.
         expect(host.querySelectorAll(".cg-file")).toHaveLength(7);
@@ -294,26 +541,22 @@ describe("graph tree", () => {
         expect(host.querySelectorAll(".cg-file--open")).toHaveLength(6);
         expect(host.querySelectorAll(".cg-file--create")).toHaveLength(1);
 
-        // Require the coordinated project order title, icon, then tag.
+        // Require the coordinated project order title, then icon.
         const gamma: HTMLElement = host.querySelector(".cg-leaf--program") as HTMLElement;
         const gammaLine: HTMLElement = gamma.parentElement as HTMLElement;
         expect(Array.from(gammaLine.children, (node: Element): string => node.className)).toEqual([
             "cg-leaf cg-leaf--program",
             "cg-file cg-file--open",
-            "cg-tag",
         ]);
         expect(gamma.textContent).toBe("└gamma");
-        expect(gammaLine.children[2]?.textContent).toBe("in program");
 
-        // Require the action marker and inline glyph.
+        // Require the action marker and the requested icon.
         const create: Element = host.querySelector(".cg-file--create") as Element;
         expect(create.getAttribute("data-cg-action")).toBe("create");
         expect(create.getAttribute("aria-hidden")).toBeNull();
+        expect(create.getAttribute("data-icon")).toBe("circle-plus");
         expect(create.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-        expect(create.querySelectorAll("svg path")).toHaveLength(2);
-
-        // Clean up the listeners.
-        tree.dispose();
+        expect((host.querySelector(".cg-file--open") as Element).getAttribute("data-icon")).toBe("sticky-note");
     });
 
     it("activates the seam once with the exact row identity", async () => {
@@ -323,7 +566,7 @@ describe("graph tree", () => {
             actionFor: () => "open",
             activate,
         };
-        const { host, tree } = mount(AREAS, actions);
+        const { host } = mount(AREAS, actions);
 
         // Activate the direct project icon.
         (host.querySelector(".cg-leaf + .cg-file") as HTMLElement).click();
@@ -373,15 +616,13 @@ describe("graph tree", () => {
             area: "work",
             program: null,
         });
-
-        // Clean up the listeners.
-        tree.dispose();
     });
 
     it("keeps one activation in flight at a time", async () => {
         // Hold the first activation open.
         let release: () => void = () => undefined;
         const pending: Promise<void> = new Promise<void>((resolve) => {
+            // Retain the resolver until the test releases the action.
             release = resolve;
         });
         const activate = vi.fn((): Promise<void> => pending);
@@ -389,7 +630,7 @@ describe("graph tree", () => {
             actionFor: () => "open",
             activate,
         };
-        const { host, tree } = mount(AREAS, actions);
+        const { host } = mount(AREAS, actions);
         const icon: HTMLElement = host.querySelector(".cg-leaf + .cg-file") as HTMLElement;
 
         // Press the icon twice before the first action settles.
@@ -403,42 +644,61 @@ describe("graph tree", () => {
         await Promise.resolve();
         icon.click();
         expect(activate).toHaveBeenCalledTimes(2);
-
-        // Clean up the listeners.
-        tree.dispose();
     });
 
-    it("keeps icons through fold and filter re-renders", () => {
+    it("does not toggle a details row when its file icon is pressed", async () => {
+        // Build a seam that opens every row.
+        const activate = vi.fn(async (): Promise<void> => undefined);
+        const actions: ContainerFileActions = {
+            actionFor: () => "open",
+            activate,
+        };
+        const { host } = mount(AREAS, actions);
+        const work: HTMLDetailsElement = areaDetails(host);
+        const program: HTMLDetailsElement = programDetails(host);
+
+        // Press the open area icon and require the area to stay open.
+        (work.querySelector("summary .cg-file") as HTMLElement).click();
+        await Promise.resolve();
+        expect(work.open).toBe(true);
+
+        // Press the open program icon and require the program to stay open.
+        (program.querySelector("summary .cg-file") as HTMLElement).click();
+        await Promise.resolve();
+        expect(program.open).toBe(true);
+        expect(activate).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps icons through native folds and filtering", () => {
         // Build a seam that opens every row.
         const actions: ContainerFileActions = {
             actionFor: () => "open",
             activate: async (): Promise<void> => undefined,
         };
-        const { host, tree } = mount(AREAS, actions);
+        const { host } = mount(AREAS, actions);
+        const work: HTMLDetailsElement = areaDetails(host);
 
         // Fold the first area and require its icon to remain.
-        (host.querySelector(".cg-node") as HTMLElement).click();
+        summary(work).click();
         expect(host.querySelector('.cg-file[aria-label="Open work"]')).not.toBeNull();
 
         // Reopen and filter to the program project.
-        (host.querySelector(".cg-node") as HTMLElement).click();
+        summary(work).click();
         search(host, "gamma");
         expect(host.querySelector('.cg-file[aria-label="Open gamma"]')).not.toBeNull();
-        expect(host.querySelectorAll(".cg-file")).toHaveLength(3);
-
-        // Clean up the listeners.
-        tree.dispose();
+        expect(visibleFileLabels(host)).toEqual([
+            "Open work",
+            "Open phd",
+            "Open gamma",
+        ]);
     });
 
     it("renders no icons without a seam", () => {
         // Mount the tree without file actions.
-        const { host, tree } = mount();
+        const { host } = mount();
 
         expect(host.querySelector(".cg-file")).toBeNull();
         expect(host.querySelector("[data-cg-action]")).toBeNull();
-
-        // Clean up the listeners.
-        tree.dispose();
     });
 
     it("keeps the body click behavior beside the file icon", async () => {
@@ -448,84 +708,25 @@ describe("graph tree", () => {
             actionFor: () => "open",
             activate,
         };
-        const { host, tree } = mount(AREAS, actions);
+        const { host } = mount(AREAS, actions);
 
-        // Activate the area body and require a fold without a file action.
-        (host.querySelector(".cg-node") as HTMLElement).click();
+        // Activate the area summary and require a fold without a file action.
+        const work: HTMLDetailsElement = areaDetails(host);
+        summary(work).click();
         await Promise.resolve();
-        expect(host.querySelector(".cg-node")?.getAttribute("aria-expanded")).toBe("false");
+        expect(work.open).toBe(false);
         expect(activate).not.toHaveBeenCalled();
 
-        // Activate the project body with a clipboard and require a copy.
-        (host.querySelector(".cg-node") as HTMLElement).click();
+        // Reopen and activate the project body with a clipboard.
+        summary(work).click();
         const written: string[] = [];
-        Object.defineProperty(navigator, "clipboard", {
-            configurable: true,
-            value: { writeText: async (text: string): Promise<void> => { written.push(text); } },
+        setClipboard(async (text: string): Promise<void> => {
+            written.push(text);
         });
         (host.querySelector(".cg-leaf") as HTMLElement).click();
         await Promise.resolve();
         await Promise.resolve();
         expect(written).toEqual(["alpha"]);
         expect(activate).not.toHaveBeenCalled();
-
-        // Clean up the listeners.
-        tree.dispose();
-    });
-
-    it("releases both pending timers when disposed", () => {
-        // Force the synchronous clipboard fallback so the toast timer is scheduled now.
-        Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
-
-        // Mount the tree and type a query to schedule a filter render.
-        const { host, tree } = mount();
-        const input: HTMLInputElement = host.querySelector(".cg-search input") as HTMLInputElement;
-        input.value = "alpha";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-
-        // Copy an identifier to schedule the toast hide.
-        (host.querySelectorAll(".cg-leaf")[0] as HTMLElement).click();
-
-        // Require exactly the filter and toast timers to be pending.
-        expect(vi.getTimerCount()).toBe(2);
-
-        // Dispose the tree and require both timers to be released.
-        tree.dispose();
-        expect(vi.getTimerCount()).toBe(0);
-
-        // Require a repeated dispose to stay harmless.
-        expect(() => tree.dispose()).not.toThrow();
-    });
-
-    it("focuses the search field through the exposed handle", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-
-        // Focus the field the way the modal keymap does.
-        tree.focusSearch();
-
-        // Require the search field to take focus.
-        expect(document.activeElement).toBe(host.querySelector(".cg-search input"));
-
-        // Clean up the listeners.
-        tree.dispose();
-    });
-
-    it("clears the query through the modal handle", () => {
-        // Mount the tree.
-        const { host, tree } = mount();
-
-        // Type a query.
-        search(host, "gamma");
-        expect(host.querySelector(".cg-stats")?.textContent).toBe("1 of 4 projects");
-
-        // Clear it the way the modal keymap does.
-        tree.clearSearch();
-
-        // Require the full graph again.
-        expect(host.querySelector(".cg-stats")?.textContent).toBe("2 areas · 4 projects · 1 program");
-
-        // Clean up the listeners.
-        tree.dispose();
     });
 });

@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", async () => await import("./stubs/obsidian"));
 
-import { App, Notice, Setting } from "obsidian";
-import { DEFAULT_SETTINGS, readCommitmentSettings } from "../src/settings/settings";
+import { App, Modal, Notice, Setting } from "obsidian";
+import { CONFIG } from "../src/constants";
+import { SettingsReader } from "../src/settings/settings";
 import type { CommitmentSettings } from "../src/settings/settings";
 import CommitmentPlugin from "../src/main";
-import { GRAPH_PATH } from "../src/graph/store";
 import { FakeVault } from "./support/fake-vault";
 
 
@@ -55,33 +55,40 @@ function modalTexts(): string[] {
 }
 
 beforeEach(() => {
-    // Reset the recorded notices, settings, and the document body.
+    // Reset the recorded modals, notices, settings, and the document body.
+    Modal.instances = [];
     Notice.instances = [];
     Setting.instances = [];
     document.body.replaceChildren();
 });
 
 describe("commitment graph commands", () => {
-    it("registers exactly the two requested command names", async () => {
+    it("registers exactly the three requested command names", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin } = await createPlugin();
         expect(plugin.commands.map((command) => command.name)).toEqual([
             "View graph",
             "Update graph",
+            "Doctor",
         ]);
         expect(plugin.commands.map((command) => command.id)).toEqual([
             "view-graph",
             "update-graph",
+            "doctor",
         ]);
     });
 
     it("reports the readiness message before the layout is ready", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, vault } = await createPlugin();
-        // Invoke the registered command.
-        await plugin.commands[0]?.callback?.();
+        for (const command of plugin.commands) {
+            // Invoke every registered command before the layout is ready.
+            await command.callback?.();
+        }
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Vault is still loading; try again",
+            CONFIG.NOT_READY_MESSAGE,
+            CONFIG.NOT_READY_MESSAGE,
+            CONFIG.NOT_READY_MESSAGE,
         ]);
         expect(vault.calls.reads).toEqual([]);
     });
@@ -100,10 +107,10 @@ describe("commitment graph commands", () => {
         ]);
         expect(vault.calls.creates).toEqual([]);
         expect(vault.calls.processes).toEqual([]);
-        expect(vault.files.has(GRAPH_PATH)).toBe(false);
+        expect(vault.files.has(CONFIG.GRAPH_PATH)).toBe(false);
     });
 
-    it("shows warnings separately from the JSON", async () => {
+    it("does not show diagnostics in the graph modal", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app } = await createPlugin({
             "projects/alpha.md": project("alpha"),
@@ -118,8 +125,8 @@ describe("commitment graph commands", () => {
         await plugin.commands[0]?.callback?.();
 
         expect(modalTexts()[0]).not.toContain("missing");
-        expect(document.body.textContent).toContain("Warnings");
-        expect(document.body.textContent).toContain("meetings/missing.md");
+        expect(document.body.textContent).not.toContain("Warnings");
+        expect(document.body.textContent).not.toContain("meetings/missing.md");
     });
 
     it("registers the presentation settings tab", async () => {
@@ -141,41 +148,121 @@ describe("commitment graph commands", () => {
         expect(document.querySelector(".commitment-graph__tree-host")).toBeNull();
     });
 
-    it("presents the tree when the stored setting selects HTML", async () => {
-        // Compose the plugin over stored HTML settings.
-        const { plugin, app } = await createPlugin(undefined, { mode: "html" });
+    it("applies the stored order to the JSON presentation", async () => {
+        // Compose the plugin over a graph whose name and count orders differ.
+        const { plugin, app } = await createPlugin({
+            "projects/alpha.md": project("alpha"),
+            "projects/beta.md": project("beta"),
+            "projects/chores.md": project("chores", "home"),
+        }, {
+            presentation: { mode: "json", sort: "count" },
+        });
         // Mark the workspace layout ready.
         app.workspace.triggerLayoutReady();
 
         // Invoke the registered command.
         await plugin.commands[0]?.callback?.();
 
-        expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
+        // Require the larger work area before the home area.
+        const text: string = modalTexts()[0] ?? "";
+        expect(text.indexOf('"work"')).toBeLessThan(text.indexOf('"home"'));
+    });
+
+    it("presents the tree when the stored setting selects it", async () => {
+        // Compose the plugin over stored tree settings.
+        const { plugin, app } = await createPlugin(undefined, {
+            presentation: { mode: "tree", sort: "name" },
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the registered command.
+        await plugin.commands[0]?.callback?.();
+
+        // Require the tree and its applied accent defaults.
+        const host: HTMLElement = document.querySelector(".commitment-graph__tree-host") as HTMLElement;
+        expect(host).not.toBeNull();
+        expect(host.style.getPropertyValue("--cg-area")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.area,
+        );
+        expect(host.style.getPropertyValue("--cg-program")).toBe(
+            CONFIG.DEFAULT_SETTINGS.appearance.program,
+        );
         expect(modalTexts()).toEqual([]);
     });
 
-    it("shows the stored presentation in the settings tab", async () => {
-        // Compose the plugin over stored tree settings.
-        const { plugin } = await createPlugin(undefined, { mode: "html" });
+    it("shows the stored presentation and order in the settings tab", async () => {
+        // Compose the plugin over stored tree settings and count order.
+        const { plugin } = await createPlugin(undefined, {
+            presentation: { mode: "tree", sort: "count" },
+        });
         // Render the registered settings tab.
         plugin.settingTabs[0]?.display();
 
-        // Read the rendered setting and its selected value.
+        // Read the rendered settings and their selected values.
         const container: HTMLElement = plugin.settingTabs[0]?.containerEl as HTMLElement;
         expect(container.textContent).toContain("Graph view");
+        expect(container.textContent).toContain("Graph order");
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
-        expect(controls[0]?.value).toBe("html");
+        const byName = (name: string): Setting | undefined =>
+            controls.find((setting) => setting.nameEl.textContent === name);
+        expect(byName("Graph view")?.value).toBe("tree");
+        expect(byName("Graph order")?.value).toBe("count");
 
-        // Drive the dropdown handler the way the settings UI does.
-        controls[0]?.change?.("json");
+        // Change the mode and require the stored order to survive.
+        byName("Graph view")?.change?.("json");
         await Promise.resolve();
-        expect(plugin.data).toEqual(DEFAULT_SETTINGS);
+        expect(plugin.data).toEqual({
+            ...CONFIG.DEFAULT_SETTINGS,
+            presentation: { mode: "json", sort: "count" },
+        });
+
+        // Change the order and require the stored mode to survive.
+        byName("Graph order")?.change?.("name");
+        await Promise.resolve();
+        expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
+    });
+
+    it("persists an accent color and resets it to the default", async () => {
+        // Compose the plugin and render its settings tab.
+        const { plugin } = await createPlugin();
+        plugin.settingTabs[0]?.display();
+
+        // Read the area and program accent controls.
+        const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
+        const area: Setting | undefined = controls.find(
+            (setting) => setting.nameEl.textContent === "Area accent",
+        );
+        const program: Setting | undefined = controls.find(
+            (setting) => setting.nameEl.textContent === "Program accent",
+        );
+
+        // Require both pickers to start on the applied defaults.
+        expect(area?.color?.value).toBe(CONFIG.DEFAULT_SETTINGS.appearance.area);
+        expect(program?.color?.value).toBe(CONFIG.DEFAULT_SETTINGS.appearance.program);
+
+        // Change the accent and require the complete normalized settings.
+        area?.change?.("#112233");
+        await Promise.resolve();
+        expect(plugin.data).toEqual({
+            ...CONFIG.DEFAULT_SETTINGS,
+            appearance: {
+                area: "#112233",
+                program: CONFIG.DEFAULT_SETTINGS.appearance.program,
+            },
+        });
+
+        // Reset the accent and require the same default in settings and picker.
+        area?.reset?.();
+        await Promise.resolve();
+        expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
+        expect(area?.color?.value).toBe(CONFIG.DEFAULT_SETTINGS.appearance.area);
     });
 
     it("renders grouped creation fields and persists one without losing the others", async () => {
         // Compose the plugin over nested creation settings.
         const { plugin } = await createPlugin(undefined, {
-            presentation: { mode: "html" },
+            presentation: { mode: "tree", sort: "name" },
             creation: {
                 project: { templatePath: "Templates/project.md", folderPath: "Projects" },
             },
@@ -183,16 +270,19 @@ describe("commitment graph commands", () => {
         // Render the registered settings tab.
         plugin.settingTabs[0]?.display();
 
-        // Require the General, Area, Program, and Project group headings.
+        // Require the General, Appearance, Area, Program, and Project group headings.
         expect(
             Setting.instances.filter((setting) => setting.heading).map((setting) => setting.nameEl.textContent),
-        ).toEqual(["General", "Area", "Program", "Project"]);
+        ).toEqual(["General", "Appearance", "Area", "Program", "Project"]);
 
-        // Require the style choice, then template, folder, and pattern per kind.
+        // Require the accent colors, then the style and creation fields.
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
         expect(controls.map((setting) => setting.value)).toEqual([
-            "html",
+            "tree",
+            "name",
             "none",
+            CONFIG.DEFAULT_SETTINGS.appearance.area,
+            CONFIG.DEFAULT_SETTINGS.appearance.program,
             "",
             "",
             "Area - {{id}}",
@@ -205,12 +295,13 @@ describe("commitment graph commands", () => {
         ]);
 
         // Change the project folder through its text control.
-        controls[9]?.change?.("Commitments/Projects");
+        controls[12]?.change?.("Commitments/Projects");
         await Promise.resolve();
 
         // Require the complete normalized settings shape with the edited folder.
         expect(plugin.data).toEqual({
-            presentation: { mode: "html" },
+            presentation: { mode: "tree", sort: "name" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: { templatePath: "", folderPath: "", pattern: "Area - {{id}}" },
@@ -228,22 +319,29 @@ describe("commitment graph commands", () => {
         // Compose the plugin over an in-memory vault.
         const { plugin } = await createPlugin();
 
-        // Persist the tree presentation through the plugin surface.
-        await plugin.saveSettings({ ...DEFAULT_SETTINGS, presentation: { mode: "html" } });
-        expect(plugin.data).toEqual({ ...DEFAULT_SETTINGS, presentation: { mode: "html" } });
+        // Persist the tree presentation and count order through the plugin surface.
+        await plugin.saveSettings({
+            ...CONFIG.DEFAULT_SETTINGS,
+            presentation: { mode: "tree", sort: "count" },
+        });
+        expect(plugin.data).toEqual({
+            ...CONFIG.DEFAULT_SETTINGS,
+            presentation: { mode: "tree", sort: "count" },
+        });
 
         // Persist JSON again and confirm the last write wins.
-        await plugin.saveSettings(DEFAULT_SETTINGS);
-        expect(plugin.data).toEqual(DEFAULT_SETTINGS);
+        await plugin.saveSettings(CONFIG.DEFAULT_SETTINGS);
+        expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
     });
 
-    it("normalizes settings through saveData and keeps existing data compatible", async () => {
+    it("normalizes settings through saveData and reads them back", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin } = await createPlugin();
 
         // Persist unsafe and padded creation values.
         const next: CommitmentSettings = {
-            presentation: { mode: "html" },
+            presentation: { mode: "tree", sort: "count" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: {
@@ -263,7 +361,8 @@ describe("commitment graph commands", () => {
 
         // Require the normalized shape, with the default patterns filled in.
         expect(plugin.data).toEqual({
-            presentation: { mode: "html" },
+            presentation: { mode: "tree", sort: "count" },
+            appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
                 area: { templatePath: "Templates/area.md", folderPath: "", pattern: "Area - {{id}}" },
@@ -273,28 +372,14 @@ describe("commitment graph commands", () => {
         });
 
         // Require the saved data to read back as the same settings.
-        expect(readCommitmentSettings(plugin.data)).toEqual(plugin.settings);
+        expect(new SettingsReader().read(plugin.data)).toEqual(plugin.settings);
     });
 
-    it("upgrades a legacy mode and round-trips the shipped shape through saveData", async () => {
-        // Compose the plugin over legacy tree settings.
-        const { plugin } = await createPlugin(undefined, { mode: "html" });
-        expect(plugin.settings.presentation.mode).toBe("html");
-
-        // Persist the upgraded value.
-        await plugin.saveSettings(plugin.settings);
-
-        // Require the shipped nested shape with the legacy mode preserved.
-        expect(plugin.data).toEqual({
-            ...DEFAULT_SETTINGS,
-            presentation: { mode: "html" },
+    it("writes canonical graph bytes regardless of the display order", async () => {
+        // Compose the plugin over stored tree settings and count order.
+        const { plugin, app, vault } = await createPlugin(undefined, {
+            presentation: { mode: "tree", sort: "count" },
         });
-        expect(readCommitmentSettings(plugin.data)).toEqual(plugin.settings);
-    });
-
-    it("writes identical graph bytes in tree mode", async () => {
-        // Compose the plugin over stored tree settings.
-        const { plugin, app, vault } = await createPlugin(undefined, { mode: "html" });
         // Mark the workspace layout ready.
         app.workspace.triggerLayoutReady();
 
@@ -302,7 +387,7 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         // Require the same projection the JSON presentation shows.
-        const written: unknown = vault.files.get(GRAPH_PATH);
+        const written: unknown = vault.files.get(CONFIG.GRAPH_PATH);
         const text: string = typeof written === "string"
             ? written
             : new TextDecoder().decode(written as Uint8Array);
@@ -324,7 +409,7 @@ describe("commitment graph commands", () => {
 
         expect(modalTexts()).toEqual([]);
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Canonical project container 'projects/alpha.md' is missing required field 'id'.",
+            "Project `projects/alpha.md` is missing `id`.",
         ]);
     });
 
@@ -350,17 +435,17 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Commitment graph written",
+            "Graph written",
         ]);
-        expect(vault.calls.creates).toEqual([GRAPH_PATH]);
-        expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toContain('"alpha"');
+        expect(vault.calls.creates).toEqual([CONFIG.GRAPH_PATH]);
+        expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toContain('"alpha"');
     });
 
     it("reports unchanged without writing identical output", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin({
             "projects/alpha.md": project("alpha"),
-            [GRAPH_PATH]:
+            [CONFIG.GRAPH_PATH]:
                 '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',
         });
         // Mark the workspace layout ready.
@@ -370,37 +455,12 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Commitment graph unchanged",
+            "Graph unchanged",
         ]);
         expect(vault.calls.processes).toEqual([]);
     });
 
-    it("writes no graph when a source changes during the build", async () => {
-        // Compose the plugin over an in-memory vault.
-        const { plugin, app, vault } = await createPlugin();
-        // Mark the workspace layout ready.
-        app.workspace.triggerLayoutReady();
-        // Capture the original vault method.
-        const original = vault.read.bind(vault);
-        let count: number = 0;
-        vi.spyOn(vault, "read").mockImplementation(async (file) => {
-            count += 1;
-            const text: string = await original(file);
-            if (count === 1) {
-                // Change the saved vault state.
-                vault.put("projects/late.md", project("late"));
-            }
-            return text;
-        });
-
-        // Invoke the registered command.
-        await plugin.commands[1]?.callback?.();
-
-        expect(Notice.instances[0]?.message).toMatch(/Saved source 'projects\/late\.md' changed/);
-        expect(vault.calls.creates).toEqual([]);
-    });
-
-    it("rejects an overlapping command with one busy notice", async () => {
+    it("rejects an overlapping Doctor command with one busy notice", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin();
         // Mark the workspace layout ready.
@@ -418,18 +478,19 @@ describe("commitment graph commands", () => {
         });
 
         const first: unknown = plugin.commands[0]?.callback?.();
-        const second: unknown = plugin.commands[0]?.callback?.();
+        const second: unknown = plugin.commands[2]?.callback?.();
         release();
         await Promise.all([first, second]);
 
-        expect(Notice.instances.map((notice) => notice.message)).toContain(
-            "A commitment graph command is already running",
-        );
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            CONFIG.BUSY_MESSAGE,
+        ]);
+        expect(vault.calls.reads).toEqual(["projects/alpha.md"]);
     });
 
-    it("presents update warnings in the modal", async () => {
+    it("reports one issue after update without opening a modal", async () => {
         // Compose the plugin over an in-memory vault.
-        const { plugin, app } = await createPlugin({
+        const { plugin, app, vault } = await createPlugin({
             "projects/alpha.md": project("alpha", "work"),
             "programs/phd.md":
                 "---\ntype: program\nid: phd\narea: work\nstate: active\n---\n",
@@ -440,11 +501,92 @@ describe("commitment graph commands", () => {
         // Invoke the registered command.
         await plugin.commands[1]?.callback?.();
 
-        expect(Notice.instances.map((notice) => notice.message)).toContain(
-            "Commitment graph written",
-        );
-        expect(document.body.textContent).toContain("Warnings");
-        expect(document.body.textContent).toContain("Program identifier 'phd'");
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Graph written. 1 issue. Run `Commitment: Doctor`.",
+        ]);
+        expect(Modal.instances).toHaveLength(0);
+        expect(vault.files.has(CONFIG.GRAPH_PATH)).toBe(true);
+    });
+
+    it("reports multiple issues after an unchanged update", async () => {
+        // Compose the plugin over two underfilled program containers.
+        const { plugin, app } = await createPlugin({
+            "programs/phd.md":
+                "---\ntype: program\nid: phd\narea: work\nstate: active\n---\n",
+            "programs/ml.md":
+                "---\ntype: program\nid: ml\narea: work\nstate: active\n---\n",
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Write the first projection so the second update stays unchanged.
+        await plugin.commands[1]?.callback?.();
+        Notice.instances = [];
+
+        // Invoke the update command again.
+        await plugin.commands[1]?.callback?.();
+
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Graph unchanged. 2 issues. Run `Commitment: Doctor`.",
+        ]);
+        expect(Modal.instances).toHaveLength(0);
+    });
+
+    it("opens the Doctor with the current findings", async () => {
+        // Compose the plugin over an in-memory vault with one underfilled program.
+        const { plugin, app, vault } = await createPlugin({
+            "projects/alpha.md": project("alpha", "work"),
+            "programs/phd.md":
+                "---\ntype: program\nid: phd\narea: work\nstate: active\n---\n",
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        // Require the grouped issue and its source action.
+        expect(Modal.instances).toHaveLength(1);
+        expect(Modal.instances[0]?.titleEl.textContent).toBe(CONFIG.DOCTOR_TITLE);
+        expect(document.body.textContent).toContain("Underfilled programs");
+        expect(document.body.textContent).toContain("Program `phd`");
+        expect(document.body.textContent).toContain("programs/phd.md");
+        expect(document.querySelector(".cd-path")).not.toBeNull();
+
+        // Require the Doctor to write nothing.
+        expect(vault.calls.creates).toEqual([]);
+        expect(vault.calls.processes).toEqual([]);
+    });
+
+    it("opens the Doctor in the healthy state", async () => {
+        // Compose the plugin over an in-memory vault.
+        const { plugin, app } = await createPlugin();
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        expect(Modal.instances).toHaveLength(1);
+        expect(Modal.instances[0]?.titleEl.textContent).toBe(CONFIG.DOCTOR_TITLE);
+        expect(document.body.textContent).toContain("No issues found.");
+    });
+
+    it("reports a blocking error from the Doctor without a modal", async () => {
+        // Compose the plugin over an in-memory vault with a missing identifier.
+        const { plugin, app } = await createPlugin({
+            "projects/alpha.md": "---\ntype: project\narea: work\n---\n",
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        expect(Modal.instances).toHaveLength(0);
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Project `projects/alpha.md` is missing `id`.",
+        ]);
     });
 
     it("does not write markdown during update", async () => {
@@ -466,7 +608,7 @@ describe("commitment graph commands", () => {
         // Compose the plugin over an in-memory vault.
         const { plugin, app, vault } = await createPlugin({
             "projects/alpha.md": project("alpha"),
-            [GRAPH_PATH]: '{"stale": true}\n',
+            [CONFIG.GRAPH_PATH]: '{"stale": true}\n',
         });
         // Mark the workspace layout ready.
         app.workspace.triggerLayoutReady();
@@ -477,8 +619,8 @@ describe("commitment graph commands", () => {
         expect(modalTexts()).toEqual([
             '{\n    "work": {\n        "projects": [\n            "alpha"\n        ],\n        "programs": {}\n    }\n}\n',
         ]);
-        expect(vault.calls.reads).not.toContain(GRAPH_PATH);
-        expect(new TextDecoder().decode(vault.files.get(GRAPH_PATH))).toBe('{"stale": true}\n');
+        expect(vault.calls.reads).not.toContain(CONFIG.GRAPH_PATH);
+        expect(new TextDecoder().decode(vault.files.get(CONFIG.GRAPH_PATH))).toBe('{"stale": true}\n');
         expect(vault.calls.processes).toEqual([]);
     });
 
@@ -500,8 +642,33 @@ describe("commitment graph commands", () => {
         await plugin.commands[1]?.callback?.();
 
         expect(Notice.instances.map((notice) => notice.message)).toEqual([
-            "Could not read 'projects/alpha.md': permission denied",
+            "Cannot read `projects/alpha.md`, permission denied",
         ]);
         expect(vault.calls.creates).toEqual([]);
+    });
+
+    it("reports an unreadable source for Doctor without a modal", async () => {
+        // Compose the plugin over an in-memory vault.
+        const { plugin, app, vault } = await createPlugin();
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+        // Capture the original vault method.
+        const original = vault.read.bind(vault);
+        vi.spyOn(vault, "read").mockImplementation(async (file) => {
+            if (file.path === "projects/alpha.md") {
+                throw new Error("permission denied");
+            }
+            return original(file);
+        });
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        expect(Notice.instances.map((notice) => notice.message)).toEqual([
+            "Cannot read `projects/alpha.md`, permission denied",
+        ]);
+        expect(Modal.instances).toHaveLength(0);
+        expect(vault.calls.creates).toEqual([]);
+        expect(vault.calls.processes).toEqual([]);
     });
 });

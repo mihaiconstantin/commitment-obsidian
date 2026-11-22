@@ -30,22 +30,20 @@ export interface ContainerIdentity {
 }
 
 
+/** Stable codes for nonblocking graph findings. */
+export type DiagnosticCode = "unresolved_anchor" | "underfilled_program";
+
+
 /** One nonblocking finding about the graph inputs. */
 export interface Diagnostic {
     /** Stable category code for the finding. */
-    readonly code: string;
+    readonly code: DiagnosticCode;
 
-    /** Readable message naming the affected identifiers and paths. */
+    /** Readable message naming the affected identifiers. */
     readonly message: string;
 
     /** Root-relative vault paths related to the finding. */
     readonly paths: readonly string[];
-
-    /** Actual observed count when the finding compares counts. */
-    readonly actual?: number;
-
-    /** Required count when the finding compares counts. */
-    readonly required?: number;
 }
 
 
@@ -72,16 +70,6 @@ export interface GraphArea {
 }
 
 
-/** One saved eligible file and its raw text. */
-export interface SourceDocument {
-    /** Root-relative vault path. */
-    readonly path: string;
-
-    /** Exact saved file text. */
-    readonly text: string;
-}
-
-
 /** One saved file with its parsed frontmatter mapping. */
 export interface CanonicalInput {
     /** Root-relative vault path. */
@@ -89,14 +77,4 @@ export interface CanonicalInput {
 
     /** Parsed frontmatter as own entries. */
     readonly frontmatter: ReadonlyMap<string, unknown>;
-}
-
-
-/** The eligible saved inputs captured at one moment. */
-export interface InputSnapshot {
-    /** Every eligible saved file in path order. */
-    readonly documents: readonly SourceDocument[];
-
-    /** Parsed frontmatter for every eligible saved file. */
-    readonly inputs: readonly CanonicalInput[];
 }

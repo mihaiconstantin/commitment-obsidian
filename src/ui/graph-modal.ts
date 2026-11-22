@@ -1,111 +1,60 @@
 /**
  * Obsidian modal that renders one commitment graph as a tree or as JSON text.
  *
- * The modal owns the rendered content, the keymap shortcuts, and the tree that
- * serves file actions. It builds its body in `onOpen()` so Obsidian controls
- * when the content is attached, and releases the tree in `onClose()`.
+ * The modal owns the rendered content and the keymap shortcuts. It builds its
+ * body in `onOpen()` so Obsidian controls when the content is attached, and
+ * releases the rendered content in `onClose()`.
  */
 
-import { Modal, Notice, type App } from "obsidian";
+import { Notice, type App } from "obsidian";
 
+import { CONFIG } from "../constants";
 import type { ContainerFileActions } from "../containers/container-file-actions";
 import { VaultContainerFileActions } from "../containers/vault-file-actions";
-import type { GraphResult } from "../graph/commitment-graph";
-import { describeFailure } from "../plugin-failure";
-import type { CommitmentCreationSettings, PresentationMode } from "../settings/settings";
+import type { CommitmentGraph } from "../graph/commitment-graph";
+import type { GraphArea } from "../graph/types";
+import { orderAreas } from "../helpers/area-order";
+import { describeFailure } from "../helpers/utils";
+import type {
+    AppearanceSettings,
+    CommitmentCreationSettings,
+    PresentationSettings,
+} from "../settings/settings";
 import { GraphTree } from "./graph-tree";
-
-
-/** Readable modal title. */
-const TITLE: "Commitment Graph" = "Commitment Graph";
+import { CommitmentModal } from "./commitment-modal";
 
 
 /** Modal showing one derived graph. */
-export class GraphModal extends Modal {
-    /** Graph snapshot and its nonblocking findings. */
-    private readonly result: GraphResult;
+export class GraphModal extends CommitmentModal {
+    /** Graph snapshot shown by this modal. */
+    private readonly graph: CommitmentGraph;
 
-    /** Shape used to present the graph. */
-    private readonly mode: PresentationMode;
+    /** Shape and area order used to present the graph. */
+    private readonly presentation: PresentationSettings;
+
+    /** Accent colors used by the tree. */
+    private readonly appearance: AppearanceSettings;
 
     /** Supplier for the creation settings used by tree file actions. */
     private readonly creation: () => CommitmentCreationSettings;
 
-    /** Mounted tree, or null outside tree mode. */
-    private tree: GraphTree | null = null;
-
     /** Called after the modal released its content, or null when unused. */
     private readonly released: (() => void) | null;
 
-    /** Construct the modal without touching the DOM. */
-    constructor(
-        app: App,
-        result: GraphResult,
-        mode: PresentationMode,
-        creation: () => CommitmentCreationSettings,
-        released: (() => void) | null = null,
-    ) {
-        // Initialize the Obsidian modal and retain its inputs.
-        super(app);
-        this.result = result;
-        this.mode = mode;
-        this.creation = creation;
-        this.released = released;
-    }
-
-    /** Build the modal body when Obsidian opens it. */
-    onOpen(): void {
-        // Identify the modal and size it for the tree.
-        this.setTitle(TITLE);
-        if (this.mode === "html") {
-            // Add the tree sizing classes.
-            this.modalEl.classList.add("commitment-graph-modal", "mod-lg");
-        }
-
-        // Read the modal content element and clear any previous content.
-        const content: HTMLElement = this.contentEl;
-        content.empty();
-
-        // Render the selected shape: the raw projection or the interactive tree.
-        if (this.mode === "html") {
-            // Render the interactive tree with file actions.
-            this.renderTree(content);
-        } else {
-            // Render the graph JSON as selectable text in a scrollable block.
-            const block: HTMLElement = content.createEl("pre", {
-                cls: "commitment-graph__json",
-            });
-            block.setText(this.result.graph.toJson());
-        }
-
-        // Add the warnings when the build reported any.
-        this.renderWarnings(content);
-    }
-
-    /** Release the tree and rendered content when Obsidian closes the modal. */
-    onClose(): void {
-        // Stop the tree timers and drop the retained handle.
-        this.tree?.dispose();
-        this.tree = null;
-
-        // Release the rendered tree so a closed modal retains no view state.
-        this.contentEl.empty();
-
-        // Notify the owner so it can drop its reference to this modal.
-        this.released?.();
-    }
+    /** Keep the base modal from focusing its first input when opened. */
+    public hasInitialInputFocus: boolean = false;
 
     /** Mount the tree and bind the modal keymap shortcuts to it. */
     private renderTree(content: HTMLElement): void {
         // Create the tree host that fills the modal body.
         const host: HTMLElement = content.createDiv({
-            cls: "commitment-graph__tree-host",
+            cls: "commitment-graph__tree-host commitment-modal__body",
         });
 
         // Build the vault adapter for this graph and the current settings.
         const adapter: VaultContainerFileActions = new VaultContainerFileActions(
             this.app,
-            this.result.graph,
+            this.graph,
             (kind) => this.creation()[kind],
             () => this.creation().idStyle,
         );
@@ -127,9 +76,14 @@ export class GraphModal extends Modal {
             },
         };
 
-        // Mount the interactive tree with the same behavior as the standalone view.
-        const tree: GraphTree = GraphTree.mount(host, this.result.graph.getAreas(), actions);
-        this.tree = tree;
+        // Mount the interactive tree in the configured area order.
+        const tree: GraphTree = new GraphTree(
+            host,
+            this.graph.getAreas(),
+            this.presentation.sort,
+            actions,
+            this.appearance,
+        );
 
         // Bind "/" to the search field through the modal keymap.
         this.scope.register(null, "/", (): false | true => {
@@ -145,53 +99,68 @@ export class GraphModal extends Modal {
             // Return false so Obsidian prevents the slash from being typed.
             return false;
         });
-
-        // Clear the filter on Escape before Obsidian closes the modal.
-        this.scope.register(null, "Escape", (): false | true => {
-            // Leave Escape alone unless the search field has focus.
-            if (!tree.hasSearchFocus()) {
-                // Let Obsidian close the modal.
-                return true;
-            }
-
-            // Clear the query and keep the modal open.
-            tree.clearSearch();
-            return false;
-        });
     }
 
-    /** Add the warnings heading and entries when the build reported any. */
-    private renderWarnings(content: HTMLElement): void {
-        // Add nothing without findings.
-        if (this.result.diagnostics.length === 0) {
-            // Leave the graph content without a warnings section.
-            return;
+    /** Construct the modal without touching the DOM. */
+    public constructor(
+        app: App,
+        graph: CommitmentGraph,
+        presentation: PresentationSettings,
+        appearance: AppearanceSettings,
+        creation: () => CommitmentCreationSettings,
+        released: (() => void) | null = null,
+    ) {
+        // Initialize the Obsidian modal and retain its inputs.
+        super(app);
+        this.graph = graph;
+        this.presentation = presentation;
+        this.appearance = appearance;
+        this.creation = creation;
+        this.released = released;
+    }
+
+    /** Build the modal body when Obsidian opens it. */
+    public override onOpen(): void {
+        // Use the shared shell only for the full-height tree presentation.
+        if (this.presentation.mode === "tree") {
+            // Apply the shared title, shell, and phone sizing classes.
+            this.configureCommitmentModal(CONFIG.GRAPH_TITLE, "commitment-graph-modal");
+        } else {
+            // Keep the default auto-sized JSON modal.
+            this.setTitle(CONFIG.GRAPH_TITLE);
         }
 
-        // Add a warnings heading below the graph.
-        content.createEl("h3", {
-            text: "Warnings",
-            cls: "commitment-graph__warnings-title",
-        });
+        // Read the modal content element and clear any previous content.
+        const content: HTMLElement = this.contentEl;
+        content.empty();
 
-        // List each warning with its affected paths.
-        const list: HTMLElement = content.createEl("ul", {
-            cls: "commitment-graph__warnings",
-        });
-        for (const diagnostic of this.result.diagnostics) {
-            // Render the warning message and its paths as text.
-            const item: HTMLElement = list.createEl("li", {
-                text: diagnostic.message,
+        // Render the selected shape: the projection or the interactive tree.
+        if (this.presentation.mode === "tree") {
+            // Render the interactive tree with file actions.
+            this.renderTree(content);
+        } else {
+            // Create the selectable block that carries the projection.
+            const block: HTMLElement = content.createEl("pre", {
+                cls: "commitment-graph__json",
             });
 
-            // Add the paths when the warning names any.
-            if (diagnostic.paths.length > 0) {
-                // Render the source paths as a separate line.
-                item.createEl("div", {
-                    text: diagnostic.paths.join(", "),
-                    cls: "commitment-graph__paths",
-                });
-            }
+            // Order a copy of the graph areas for this presentation.
+            const orderedAreas: readonly GraphArea[] = orderAreas(
+                this.graph.getAreas(),
+                this.presentation.sort,
+            );
+
+            // Serialize that ordered list through the graph's projection format.
+            block.setText(this.graph.toJson(orderedAreas));
         }
+    }
+
+    /** Release the rendered content when Obsidian closes the modal. */
+    public override onClose(): void {
+        // Release the rendered tree so a closed modal retains no view state.
+        this.contentEl.empty();
+
+        // Notify the owner so it can drop its reference to this modal.
+        this.released?.();
     }
 }

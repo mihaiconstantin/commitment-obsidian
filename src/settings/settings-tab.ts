@@ -7,22 +7,23 @@ import {
     PluginSettingTab,
     Setting,
     type App,
+    type ColorComponent,
     type DropdownComponent,
+    type ExtraButtonComponent,
     type TextComponent,
 } from "obsidian";
 
-import {
-    DEFAULT_PATTERNS,
-    ID_STYLES,
-    isIdStyle,
-    type IdStyle,
-} from "../containers/file-name";
+import { CONFIG } from "../constants";
+import { IdStyleCatalog } from "../containers/file-name";
 import type { CommitmentLevel } from "../graph/types";
 import type {
+    AccentLevel,
+    AppearanceSettings,
     CommitmentSettings,
     ContainerCreationSettings,
+    GraphSort,
+    PresentationMode,
 } from "./settings";
-import { isPresentationMode } from "./settings";
 
 
 /** Plugin surface used by the settings tab. */
@@ -58,57 +59,36 @@ interface CreationCopy {
 }
 
 
-/** Readable copy for every container kind. */
-const KIND_LABELS: Readonly<Record<CommitmentLevel, string>> = {
-    area: "Area",
-    program: "Program",
-    project: "Project",
-};
-
-
 /** Settings tab for graph presentation and container creation. */
 export class CommitmentSettingTab extends PluginSettingTab {
     /** Plugin whose settings this tab edits. */
     private readonly host: CommitmentSettingsHost;
 
-    /** Construct the tab for one app and plugin. */
-    constructor(app: App, host: CommitmentSettingsHost) {
-        // Initialize the settings tab with its app and plugin.
-        super(app, host);
+    /** Supported identifier styles for the dropdown and change gate. */
+    private readonly styles: IdStyleCatalog = new IdStyleCatalog();
 
-        // Store the settings host used for reads and writes.
-        this.host = host;
-    }
-
-    /** Render the presentation and creation settings. */
-    display(): void {
-        // Read the settings container element.
-        const container: HTMLElement = this.containerEl;
-
-        // Clear any previous content.
-        container.empty();
-
-        // Render the plugin-wide choices.
-        this.heading(container, "General");
-        this.presentationSetting(container);
-        this.styleSetting(container);
-
-        // Add the three creation fields for every container kind.
-        for (const kind of ["area", "program", "project"] as const) {
-            // Group the kind's fields under its own heading.
-            this.heading(container, KIND_LABELS[kind]);
-
-            // Render the template, folder, and pattern fields.
-            this.creationSetting(container, { kind, field: "templatePath" });
-            this.creationSetting(container, { kind, field: "folderPath" });
-            this.creationSetting(container, { kind, field: "pattern" });
-        }
-    }
+    /** Accent copy for the two supported levels. */
+    private readonly accentDescriptions: Readonly<Record<AccentLevel, string>> = {
+        area: "Color for area names and size meters.",
+        program: "Color for program names and glyphs.",
+    };
 
     /** Render one group heading using the setting widget Obsidian provides. */
     private heading(container: HTMLElement, text: string): void {
         // Use the heading form of a setting, which exists at the minimum app version.
         new Setting(container).setName(text).setHeading();
+    }
+
+    /** Persist one accent color change with the other settings intact. */
+    private saveAppearance(kind: AccentLevel, value: string): void {
+        // Replace only the edited commitment level.
+        const appearance: AppearanceSettings = {
+            ...this.host.settings.appearance,
+            [kind]: value,
+        };
+
+        // Persist the complete settings value.
+        void this.host.saveSettings({ ...this.host.settings, appearance });
     }
 
     /** Persist one creation field change with the other settings intact. */
@@ -132,7 +112,7 @@ export class CommitmentSettingTab extends PluginSettingTab {
     /** Read the copy for one creation field. */
     private copyFor(field: CreationField): CreationCopy {
         // Read the readable kind label.
-        const label: string = KIND_LABELS[field.kind];
+        const label: string = CONFIG.KIND_LABELS[field.kind];
 
         // Describe the pattern field.
         if (field.field === "pattern") {
@@ -140,7 +120,7 @@ export class CommitmentSettingTab extends PluginSettingTab {
             return {
                 name: `${label} file name`,
                 description: `Base name for new ${field.kind} files without the extension. Use {{id}} for the identifier. This value must contain a unique part.`,
-                placeholder: DEFAULT_PATTERNS[field.kind],
+                placeholder: CONFIG.DEFAULT_PATTERNS[field.kind],
             };
         }
 
@@ -169,25 +149,97 @@ export class CommitmentSettingTab extends PluginSettingTab {
             .setName("Graph view")
             .setDesc("Show the graph as JSON text or as a foldable tree.")
             .addDropdown((dropdown: DropdownComponent): void => {
-                // Offer the JSON text presentation.
-                dropdown.addOption("json", "JSON");
-
-                // Offer the foldable tree presentation.
-                dropdown.addOption("html", "Tree");
+                // Offer every supported presentation with its readable label.
+                for (const mode of Object.keys(CONFIG.PRESENTATION_MODES) as PresentationMode[]) {
+                    // Add the mode with its readable label.
+                    dropdown.addOption(mode, CONFIG.PRESENTATION_MODES[mode]);
+                }
 
                 // Select the stored presentation and persist a change.
                 dropdown.setValue(this.host.settings.presentation.mode);
                 dropdown.onChange((value: string): void => {
-                    // Persist only a supported presentation.
-                    if (isPresentationMode(value)) {
-                        // Save the selected mode with the creation settings intact.
+                    // Persist only a mode defined by the shared map.
+                    if (Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value)) {
+                        // Save the selected mode with the order and creation settings intact.
                         void this.host.saveSettings({
                             ...this.host.settings,
-                            presentation: { mode: value },
+                            presentation: {
+                                ...this.host.settings.presentation,
+                                mode: value as PresentationMode,
+                            },
                         });
                     }
                 });
             });
+    }
+
+    /** Render the graph area order choice. */
+    private sortSetting(container: HTMLElement): void {
+        // Create the sort setting.
+        new Setting(container)
+            .setName("Graph order")
+            .setDesc("Order areas in every graph view.")
+            .addDropdown((dropdown: DropdownComponent): void => {
+                // Offer every supported order with its readable label.
+                for (const sort of Object.keys(CONFIG.GRAPH_SORTS) as GraphSort[]) {
+                    // Add the order with its readable label.
+                    dropdown.addOption(sort, CONFIG.GRAPH_SORTS[sort]);
+                }
+
+                // Select the stored order and persist a change.
+                dropdown.setValue(this.host.settings.presentation.sort);
+                dropdown.onChange((value: string): void => {
+                    // Persist only an order defined by the shared map.
+                    if (Object.prototype.hasOwnProperty.call(CONFIG.GRAPH_SORTS, value)) {
+                        // Save the selected order with the mode and creation settings intact.
+                        void this.host.saveSettings({
+                            ...this.host.settings,
+                            presentation: {
+                                ...this.host.settings.presentation,
+                                sort: value as GraphSort,
+                            },
+                        });
+                    }
+                });
+            });
+    }
+
+    /** Render one commitment level's accent color choice. */
+    private appearanceSetting(container: HTMLElement, kind: AccentLevel): void {
+        // Read the stored color and the shipped default.
+        const stored: string = this.host.settings.appearance[kind];
+        const fallback: string = CONFIG.DEFAULT_SETTINGS.appearance[kind];
+
+        // Keep the picker accessible to the reset control.
+        let picker: ColorComponent | null = null;
+
+        // Create the color setting and its reset action.
+        const setting: Setting = new Setting(container)
+            .setName(`${CONFIG.KIND_LABELS[kind]} accent`)
+            .setDesc(this.accentDescriptions[kind]);
+        setting.addColorPicker((component: ColorComponent): void => {
+            // Store the component and show the applied color.
+            picker = component;
+            component.setValue(stored);
+
+            // Persist a changed picker value.
+            component.onChange((value: string): void => {
+                // Save the selected accent.
+                this.saveAppearance(kind, value);
+            });
+        });
+        setting.addExtraButton((button: ExtraButtonComponent): void => {
+            // Restore the shipped default and update the visible picker.
+            button.setIcon("rotate-ccw");
+            button.setTooltip("Reset to the default");
+            button.onClick((): void => {
+                // Restore the default color.
+                this.saveAppearance(kind, fallback);
+
+                // Show the restored default.
+                picker?.setValue(fallback);
+            });
+        });
     }
 
     /** Render the identifier style choice. */
@@ -198,16 +250,16 @@ export class CommitmentSettingTab extends PluginSettingTab {
             .setDesc("How the identifier is written inside created file names. Template placeholders are unchanged.")
             .addDropdown((dropdown: DropdownComponent): void => {
                 // Offer every supported style.
-                for (const style of Object.keys(ID_STYLES) as IdStyle[]) {
+                for (const style of this.styles.keys()) {
                     // Add the style with its readable label.
-                    dropdown.addOption(style, ID_STYLES[style].label);
+                    dropdown.addOption(style, this.styles.label(style));
                 }
 
                 // Select the stored style and persist a change.
                 dropdown.setValue(this.host.settings.creation.idStyle);
                 dropdown.onChange((value: string): void => {
                     // Persist only a supported style.
-                    if (isIdStyle(value)) {
+                    if (this.styles.isStyle(value)) {
                         // Save the style with every other setting intact.
                         void this.host.saveSettings({
                             ...this.host.settings,
@@ -238,5 +290,47 @@ export class CommitmentSettingTab extends PluginSettingTab {
                     this.saveCreation(field, value);
                 });
             });
+    }
+
+    /** Construct the tab for one app and plugin. */
+    public constructor(app: App, host: CommitmentSettingsHost) {
+        // Initialize the settings tab with its app and plugin.
+        super(app, host);
+
+        // Store the settings host used for reads and writes.
+        this.host = host;
+    }
+
+    /** Render the presentation and creation settings. */
+    public override display(): void {
+        // Read the settings container element.
+        const container: HTMLElement = this.containerEl;
+
+        // Clear any previous content.
+        container.empty();
+
+        // Render the plugin-wide choices.
+        this.heading(container, "General");
+        this.presentationSetting(container);
+        this.sortSetting(container);
+        this.styleSetting(container);
+
+        // Render the accent color for every supported commitment level.
+        this.heading(container, "Appearance");
+        for (const kind of ["area", "program"] as const) {
+            // Add the level's color picker and reset action.
+            this.appearanceSetting(container, kind);
+        }
+
+        // Add the three creation fields for every container kind.
+        for (const kind of ["area", "program", "project"] as const) {
+            // Group the kind's fields under its own heading.
+            this.heading(container, CONFIG.KIND_LABELS[kind]);
+
+            // Render the template, folder, and pattern fields.
+            this.creationSetting(container, { kind, field: "templatePath" });
+            this.creationSetting(container, { kind, field: "folderPath" });
+            this.creationSetting(container, { kind, field: "pattern" });
+        }
     }
 }

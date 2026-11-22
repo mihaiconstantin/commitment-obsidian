@@ -1,4 +1,4 @@
-/* Interactive graph tree. Mirrors the approved standalone HTML view. */
+/* Interactive graph tree. */
 .commitment-graph__tree-host {
     display: flex;
     flex-direction: column;
@@ -14,33 +14,22 @@
     box-sizing: border-box;
 }
 
+/* GraphTree sets --cg-area and --cg-program inline from saved settings. */
 .commitment-graph__tree-host {
     --cg-bg: var(--background-primary);
     --cg-fg: var(--text-normal);
     --cg-muted: var(--text-muted);
     --cg-line: var(--background-modifier-border);
     --cg-card: var(--background-secondary);
-    --cg-p: var(--interactive-accent);
-    --cg-p-soft: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
-    --cg-p-line: color-mix(in srgb, var(--interactive-accent) 34%, transparent);
-    --cg-prog: #b45309;
-    --cg-prog-soft: #fef3c7;
-    --cg-prog-line: #fcd34d;
+    --cg-accent: var(--interactive-accent);
     --cg-radius: 9px;
-}
-
-.theme-dark .commitment-graph__tree-host {
-    --cg-prog: #fcd34d;
-    --cg-prog-soft: #3a2c0d;
-    --cg-prog-line: #b45309;
 }
 
 .commitment-graph__tree-host .cg-tools {
     display: flex;
-    flex-wrap: wrap;
     gap: 7px;
     align-items: center;
-    padding: 0px 0 0;
+    padding: 0 0 0;
 }
 
 .commitment-graph__tree-host .cg-search {
@@ -66,8 +55,8 @@
 }
 
 .commitment-graph__tree-host .cg-search input:focus {
-    border-color: var(--cg-p);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cg-p) 18%, transparent);
+    border-color: var(--cg-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--cg-accent) 18%, transparent);
 }
 
 .commitment-graph__tree-host .cg-search-icon {
@@ -77,6 +66,12 @@
     transform: translateY(-50%);
     opacity: 0.45;
     display: flex;
+}
+
+.commitment-graph__tree-host .cg-search-icon svg {
+    width: 12px;
+    height: 12px;
+    display: block;
 }
 
 .commitment-graph__tree-host .cg-kbd {
@@ -93,7 +88,6 @@
     background: transparent;
 }
 
-.commitment-graph__tree-host .cg-select,
 .commitment-graph__tree-host .cg-btn {
     font: inherit;
     font-size: 11.5px;
@@ -110,8 +104,7 @@
     line-height: 1.45;
 }
 
-.commitment-graph__tree-host .cg-btn:hover,
-.commitment-graph__tree-host .cg-select:hover {
+.commitment-graph__tree-host .cg-btn:hover {
     border-color: var(--cg-muted);
 }
 
@@ -144,16 +137,27 @@
 }
 
 .commitment-graph__tree-host .cg-list {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    padding-right: 2px;
+    padding-right: 10px;
 }
 
 .commitment-graph__tree-host .cg-row {
     display: block;
+}
+
+/* Hide the user-agent marker; the chevron communicates the fold state. */
+.commitment-graph__tree-host .cg-row > summary,
+.commitment-graph__tree-host .cg-program > summary {
+    list-style: none;
+}
+
+.commitment-graph__tree-host .cg-row > summary::-webkit-details-marker,
+.commitment-graph__tree-host .cg-program > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Keep filtered rows out of the flow even where a class sets a display. */
+.commitment-graph__tree-host [hidden] {
+    display: none !important;
 }
 
 /* Keep the body control, file icon, and counts on one unwrapped line. */
@@ -198,16 +202,13 @@
     margin-left: auto;
 }
 
-.commitment-graph__tree-host .cg-line > .cg-meter + .cg-num {
-    margin-left: 0;
-}
-
-/* Size and space the open or create icon beside the title. */
+/* Size the open or create icon and mirror its title gap after it. */
 .commitment-graph__tree-host .cg-file {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: none;
+    margin-right: 8px;
     width: 24px;
     height: 24px;
     padding: 0;
@@ -232,7 +233,7 @@
 }
 
 .commitment-graph__tree-host .cg-file--create:hover {
-    color: var(--cg-p);
+    color: var(--cg-accent);
 }
 
 .commitment-graph__tree-host .cg-node:hover,
@@ -240,24 +241,37 @@
     background: var(--cg-card);
 }
 
-.commitment-graph__tree-host .cg-node {
+/* Space every fold line as a whole so its title and icon stay centered together. */
+.commitment-graph__tree-host .cg-row > summary.cg-line,
+.commitment-graph__tree-host .cg-program > summary.cg-line {
     margin-top: 3px;
 }
 
-.commitment-graph__tree-host .cg-row:first-child .cg-node {
+/* Keep the first area and its programs flush with the list. */
+.commitment-graph__tree-host .cg-row:first-child > summary.cg-line,
+.commitment-graph__tree-host .cg-row:first-child .cg-program > summary.cg-line {
     margin-top: 0;
 }
 
 .commitment-graph__tree-host .cg-chev {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 12px;
+    height: 12px;
     flex: none;
     color: var(--cg-muted);
-    font-size: 9px;
-    text-align: center;
     transition: transform 0.15s ease;
 }
 
-.commitment-graph__tree-host .cg-node[aria-expanded="false"] .cg-chev {
+.commitment-graph__tree-host .cg-chev svg {
+    display: block;
+    width: 12px;
+    height: 12px;
+}
+
+.commitment-graph__tree-host details.cg-row:not([open]) > summary .cg-chev,
+.commitment-graph__tree-host details.cg-program:not([open]) > summary .cg-chev {
     transform: rotate(-90deg);
 }
 
@@ -274,6 +288,7 @@
 .commitment-graph__tree-host .cg-node .cg-nm {
     font-weight: 600;
     font-size: 12.5px;
+    color: var(--cg-area);
 }
 
 .commitment-graph__tree-host .cg-leaf .cg-nm {
@@ -282,28 +297,17 @@
 
 .commitment-graph__tree-host .cg-node--program .cg-nm {
     font-weight: 600;
-    color: var(--cg-prog);
-}
-
-.commitment-graph__tree-host .cg-tag {
-    flex: none;
-    font-size: 9.5px;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--cg-prog);
-    background: var(--cg-prog-soft);
-    border: 1px solid var(--cg-prog-line);
-    border-radius: 4px;
-    padding: 0 4px;
-    white-space: nowrap;
+    color: var(--cg-program);
 }
 
 .commitment-graph__tree-host .cg-num {
     margin-left: auto;
     flex: none;
+    min-width: var(--cg-count-ch, 1ch);
     font-size: 10.5px;
     color: var(--cg-muted);
     font-variant-numeric: tabular-nums;
+    text-align: right;
 }
 
 .commitment-graph__tree-host .cg-meter {
@@ -318,7 +322,7 @@
 .commitment-graph__tree-host .cg-meter i {
     display: block;
     height: 100%;
-    background: var(--cg-p);
+    background: var(--cg-area);
     border-radius: 2px;
 }
 
@@ -331,25 +335,14 @@
 }
 
 .commitment-graph__tree-host .cg-leaf--program .cg-glyph {
-    color: var(--cg-prog);
-}
-
-.commitment-graph__tree-host .cg-leaf--program .cg-nm {
-    color: var(--cg-muted);
+    color: var(--cg-program);
 }
 
 .commitment-graph__tree-host .cg-mark {
-    background: color-mix(in srgb, var(--cg-p) 26%, transparent);
+    background: color-mix(in srgb, var(--cg-accent) 26%, transparent);
     color: inherit;
     border-radius: 2px;
     padding: 0 1px;
-}
-
-/* Reserve the 22px the retired colour legend held, so the last row keeps its
-   gutter inside the rounded modal. */
-.commitment-graph__tree-host .cg-gutter {
-    flex: none;
-    height: 22px;
 }
 
 .commitment-graph__tree-host .cg-empty {
@@ -359,42 +352,16 @@
     font-size: 12px;
 }
 
-.commitment-graph__tree-host .cg-toast {
-    position: absolute;
-    left: 50%;
-    bottom: 14px;
-    transform: translate(-50%, 8px);
-    z-index: 5;
-    background: var(--cg-fg);
-    color: var(--background-primary);
-    font-size: 11.5px;
-    line-height: 1.45;
-    padding: 6px 12px;
-    border-radius: 999px;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.16s ease, transform 0.16s ease;
-    white-space: nowrap;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.commitment-graph__tree-host .cg-toast--on {
-    opacity: 1;
-    transform: translate(-50%, 0);
-}
-
-/* The clipboard fallback is appended to body, so it cannot be host-scoped. */
-.cg-copy-field {
-    position: fixed;
-    opacity: 0;
-    pointer-events: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .commitment-graph__tree-host * {
         transition: none !important;
+    }
+}
+
+@media (min-width: 561px) {
+    /* Keep the count beside the visible meter. */
+    .commitment-graph__tree-host .cg-line > .cg-meter + .cg-num {
+        margin-left: 0;
     }
 }
 
@@ -412,41 +379,55 @@
     .commitment-graph__tree-host .cg-stats {
         font-size: 10px;
     }
-
-    /* Give the search field its own row so the controls share the next one. */
-    .commitment-graph__tree-host .cg-search {
-        flex: 1 1 100%;
-    }
-
-    .commitment-graph__tree-host .cg-toggle {
-        width: 33px;
-        padding: 7px 0;
-    }
 }
 
-/* Size the tree modal directly; Obsidian has no `mod-lg` dialog class. */
-.modal.commitment-graph-modal {
-    width: min(900px, 94vw);
+/* Shared full-height commitment modal shell. */
+.modal.commitment-modal {
+    --commitment-modal-bottom-inset: 20px;
+    width: min(760px, 94vw);
     max-width: 94vw;
     max-height: 88vh;
-}
-
-/* Pin the height on desktop so filtering shrinks the list, not the modal. */
-body:not(.is-mobile) .modal.commitment-graph-modal {
-    height: 88vh;
-}
-
-/* Keep the modal content full height so the list scrolls, not the modal. */
-.modal.commitment-graph-modal .modal-content {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
     padding-bottom: 0;
 }
 
-.modal.commitment-graph-modal .commitment-graph__tree-host {
+/* Pin the shared shell height on desktop so content scrolls, not the modal. */
+body:not(.is-mobile) .modal.commitment-modal {
+    height: 88vh;
+}
+
+/* Keep the modal content flexible and let the shared scroll region scroll.
+   Leave overflow visible so the search focus ring is not clipped. */
+.modal.commitment-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding-bottom: 0;
+}
+
+/* Let the content column fill the shared modal shell. */
+.commitment-modal__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    padding-bottom: max(
+        var(--commitment-modal-bottom-inset),
+        var(--safe-area-inset-bottom, 0px)
+    );
+}
+
+/* Let one scroll region fill the content. */
+.commitment-modal__scroll {
     flex: 1 1 auto;
     min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Size the graph tree modal. */
+.modal.commitment-graph-modal {
+    width: min(900px, 94vw);
 }
 
 /* JSON presentation. */
@@ -458,18 +439,161 @@ body:not(.is-mobile) .modal.commitment-graph-modal {
     -webkit-user-select: text;
 }
 
-.commitment-graph__warnings-title {
-    margin-block: 1rem 0.25rem;
+/* Doctor diagnostics. */
+.commitment-doctor {
+    gap: 12px;
 }
 
-.commitment-graph__warnings {
+.commitment-doctor .cd-summary {
     margin: 0;
-    padding-inline-start: 1.25rem;
-    max-height: 30vh;
-    overflow-y: auto;
-}
-
-.commitment-graph__paths {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
+    font-variant-numeric: tabular-nums;
+}
+
+.commitment-doctor .cd-list {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.commitment-doctor .cd-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.commitment-doctor .cd-group__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 1em;
+}
+
+.commitment-doctor .cd-group__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-variant-numeric: tabular-nums;
+}
+
+.commitment-doctor .cd-issue {
+    padding: 12px 14px;
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: var(--radius-m, 8px);
+    background: var(--background-secondary);
+}
+
+.commitment-doctor .cd-issue__message {
+    margin: 0;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.commitment-doctor .cd-paths {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.commitment-doctor .cd-paths__label {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.commitment-doctor .cd-paths__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.commitment-doctor .cd-path {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    max-width: 100%;
+    padding: 5px 9px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 6px);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-ui-smaller);
+    text-align: left;
+    overflow-wrap: anywhere;
+    box-shadow: none;
+    -webkit-appearance: none;
+}
+
+.commitment-doctor .cd-path:hover {
+    border-color: var(--interactive-accent);
+    color: var(--text-accent);
+}
+
+.commitment-doctor .cd-path:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+
+.commitment-doctor .cd-path__icon {
+    display: inline-flex;
+    flex: none;
+}
+
+.commitment-doctor .cd-path__icon svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.commitment-doctor .cd-empty {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+    padding: 34px 8px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.commitment-doctor .cd-empty h3 {
+    margin: 0 0 4px;
+    color: var(--text-normal);
+    font-size: 1em;
+}
+
+.commitment-doctor .cd-empty p {
+    margin: 0;
+    font-size: var(--font-ui-smaller);
+}
+
+@media (max-width: 560px) {
+    .modal.commitment-doctor-modal {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* Give every path a full-width, touch-sized target. */
+    .commitment-doctor .cd-paths__actions,
+    .commitment-doctor .cd-path {
+        width: 100%;
+    }
+
+    .commitment-doctor .cd-path {
+        min-height: 40px;
+    }
 }
