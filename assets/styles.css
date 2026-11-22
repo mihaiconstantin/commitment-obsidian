@@ -137,7 +137,7 @@
 }
 
 .commitment-graph__tree-host .cg-list {
-    padding-right: 2px;
+    padding-right: 10px;
 }
 
 .commitment-graph__tree-host .cg-row {
@@ -455,7 +455,6 @@ body:not(.is-mobile) .modal.commitment-modal {
     display: flex;
     flex-direction: column;
     gap: 18px;
-    padding-right: 2px;
 }
 
 .commitment-doctor .cd-group {
