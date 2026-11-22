@@ -210,6 +210,9 @@ describe("text graph presenter", () => {
 
         presenter.show(result.graph, TREE_PRESENTATION);
 
+        const modal: Modal = Modal.instances[0] as Modal;
+        expect(modal.modalEl.classList.contains("commitment-modal")).toBe(true);
+        expect(modal.modalEl.classList.contains("mod-lg")).toBe(true);
         expect(document.querySelector(".commitment-graph__tree-host")).not.toBeNull();
         // Areas, programs, and projects all render in the tree.
         expect(document.querySelector(".cg-node .cg-nm")?.textContent).toBe("work");
@@ -282,19 +285,19 @@ describe("text graph presenter", () => {
     it("keeps the tree scrollable and its rows foldable through the stylesheet", () => {
         // Read the shipped stylesheet.
         const styles: string = readFileSync("assets/styles.css", "utf8");
-        // The list scrolls inside the modal instead of the page.
-        expect(styles).toMatch(/\.cg-list\s*{[^}]*overflow-y:\s*auto;/s);
+        // The shared list scrolls inside the modal instead of the page.
+        expect(styles).toMatch(/\.commitment-modal__scroll\s*{[^}]*overflow-y:\s*auto;/s);
         // Long identifiers truncate with an ellipsis rather than overflow.
         expect(styles).toMatch(/\.cg-nm\s*{[^}]*text-overflow:\s*ellipsis;/s);
         // The modal content can shrink but must not clip the search focus ring.
         const contentRule: string = styles.match(
-            /commitment-graph-modal \.modal-content\s*{([^}]*)}/s,
+            /commitment-modal \.modal-content\s*{([^}]*)}/s,
         )?.[1] ?? "";
         expect(contentRule).toContain("min-height: 0;");
         expect(contentRule).not.toContain("overflow: hidden;");
-        // The desktop tree modal pins its height so filtering cannot shrink it.
+        // The desktop shell pins its height so filtering cannot shrink it.
         expect(styles).toMatch(
-            /body:not\(\.is-mobile\) \.modal\.commitment-graph-modal\s*{[^}]*height:\s*88vh;/s,
+            /body:not\(\.is-mobile\) \.modal\.commitment-modal\s*{[^}]*height:\s*88vh;/s,
         );
         // Filtered rows stay out of the flow even when a class sets a display.
         expect(styles).toMatch(

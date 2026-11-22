@@ -6,7 +6,7 @@
  * releases the rendered content in `onClose()`.
  */
 
-import { Modal, Notice, type App } from "obsidian";
+import { Notice, type App } from "obsidian";
 
 import { CONFIG } from "../constants";
 import type { ContainerFileActions } from "../containers/container-file-actions";
@@ -21,10 +21,11 @@ import type {
     PresentationSettings,
 } from "../settings/settings";
 import { GraphTree } from "./graph-tree";
+import { CommitmentModal } from "./commitment-modal";
 
 
 /** Modal showing one derived graph. */
-export class GraphModal extends Modal {
+export class GraphModal extends CommitmentModal {
     /** Graph snapshot shown by this modal. */
     private readonly graph: CommitmentGraph;
 
@@ -47,7 +48,7 @@ export class GraphModal extends Modal {
     private renderTree(content: HTMLElement): void {
         // Create the tree host that fills the modal body.
         const host: HTMLElement = content.createDiv({
-            cls: "commitment-graph__tree-host",
+            cls: "commitment-graph__tree-host commitment-modal__body",
         });
 
         // Build the vault adapter for this graph and the current settings.
@@ -120,11 +121,13 @@ export class GraphModal extends Modal {
 
     /** Build the modal body when Obsidian opens it. */
     public override onOpen(): void {
-        // Identify the modal and size it for the tree.
-        this.setTitle(CONFIG.GRAPH_TITLE);
+        // Use the shared shell only for the full-height tree presentation.
         if (this.presentation.mode === "tree") {
-            // Add the tree sizing classes.
-            this.modalEl.classList.add("commitment-graph-modal", "mod-lg");
+            // Apply the shared title, shell, and phone sizing classes.
+            this.configureCommitmentModal(CONFIG.GRAPH_TITLE, "commitment-graph-modal");
+        } else {
+            // Keep the default auto-sized JSON modal.
+            this.setTitle(CONFIG.GRAPH_TITLE);
         }
 
         // Read the modal content element and clear any previous content.

@@ -6,7 +6,7 @@
  * and rerun the Doctor command.
  */
 
-import { Modal, Notice, setIcon, type App } from "obsidian";
+import { Notice, setIcon, type App } from "obsidian";
 
 import { CONFIG } from "../constants";
 import { VaultFileOpener, type VaultFileOpenResult } from "../containers/vault-file-opener";
@@ -14,6 +14,7 @@ import type { Diagnostic, DiagnosticCode } from "../graph/types";
 import { uniqueSorted } from "../helpers/collections";
 import { countLabel } from "../helpers/strings";
 import { describeFailure } from "../helpers/utils";
+import { CommitmentModal } from "./commitment-modal";
 
 
 /** Readable group labels for every diagnostic code. */
@@ -24,7 +25,7 @@ const GROUP_LABELS: Readonly<Record<DiagnosticCode, string>> = {
 
 
 /** Modal showing the nonblocking findings from one graph build. */
-export class DoctorModal extends Modal {
+export class DoctorModal extends CommitmentModal {
     /** Findings shown by this modal. */
     private readonly diagnostics: readonly Diagnostic[];
 
@@ -54,7 +55,9 @@ export class DoctorModal extends Modal {
         content.createEl("p", { cls: "cd-summary", text: summary });
 
         // Start the scrolling list of finding groups.
-        const list: HTMLElement = content.createDiv({ cls: "cd-list" });
+        const list: HTMLElement = content.createDiv({
+            cls: "cd-list commitment-modal__scroll",
+        });
 
         // Group findings by their stable code in first-appearance order.
         const groups: Map<DiagnosticCode, Diagnostic[]> = new Map<DiagnosticCode, Diagnostic[]>();
@@ -203,24 +206,27 @@ export class DoctorModal extends Modal {
 
     /** Build the modal body when Obsidian opens it. */
     public override onOpen(): void {
-        // Identify the modal and apply its layout class.
-        this.setTitle(CONFIG.DOCTOR_TITLE);
-        this.modalEl.classList.add("commitment-doctor-modal");
+        // Apply the shared title, shell, and phone sizing classes.
+        this.configureCommitmentModal(CONFIG.DOCTOR_TITLE, "commitment-doctor-modal");
 
-        // Read the modal content and mark it for the Doctor layout.
+        // Read the modal content and replace any previous body.
         const content: HTMLElement = this.contentEl;
         content.empty();
-        content.classList.add("commitment-doctor");
+
+        // Create the body column for the Doctor layout.
+        const body: HTMLElement = content.createDiv({
+            cls: "commitment-doctor commitment-modal__body",
+        });
 
         // Render the healthy state or the grouped findings.
         if (this.diagnostics.length === 0) {
             // Show the healthy state.
-            this.renderEmpty(content);
+            this.renderEmpty(body);
             return;
         }
 
         // Show the summary and findings.
-        this.renderDiagnostics(content);
+        this.renderDiagnostics(body);
     }
 
     /** Release the rendered content when Obsidian closes the modal. */

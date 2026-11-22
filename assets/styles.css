@@ -137,11 +137,6 @@
 }
 
 .commitment-graph__tree-host .cg-list {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
     padding-right: 2px;
 }
 
@@ -393,30 +388,49 @@
     }
 }
 
-/* Size the tree modal directly; Obsidian has no `mod-lg` dialog class. */
-.modal.commitment-graph-modal {
-    width: min(900px, 94vw);
+/* Shared full-height commitment modal shell. */
+.modal.commitment-modal {
+    --commitment-modal-bottom-inset: 20px;
+    width: min(760px, 94vw);
     max-width: 94vw;
     max-height: 88vh;
+    padding-bottom: 0;
 }
 
-/* Pin the height on desktop so filtering shrinks the list, not the modal. */
-body:not(.is-mobile) .modal.commitment-graph-modal {
+/* Pin the shared shell height on desktop so content scrolls, not the modal. */
+body:not(.is-mobile) .modal.commitment-modal {
     height: 88vh;
 }
 
-/* Keep the modal content full height so the list scrolls, not the modal.
+/* Keep the modal content flexible and let the shared scroll region scroll.
    Leave overflow visible so the search focus ring is not clipped. */
-.modal.commitment-graph-modal .modal-content {
+.modal.commitment-modal .modal-content {
     display: flex;
     flex-direction: column;
     min-height: 0;
     padding-bottom: 0;
 }
 
-.modal.commitment-graph-modal .commitment-graph__tree-host {
+/* Let the content column fill the shared modal shell. */
+.commitment-modal__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Let one scroll region fill the content. */
+.commitment-modal__scroll {
     flex: 1 1 auto;
     min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Size the graph tree modal. */
+.modal.commitment-graph-modal {
+    width: min(900px, 94vw);
 }
 
 /* JSON presentation. */
@@ -429,25 +443,7 @@ body:not(.is-mobile) .modal.commitment-graph-modal {
 }
 
 /* Doctor diagnostics. */
-.modal.commitment-doctor-modal {
-    width: min(760px, 94vw);
-    max-width: 94vw;
-    max-height: 88vh;
-}
-
-/* Keep the modal content flexible and let its list own the scroll. */
-.modal.commitment-doctor-modal .modal-content {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    padding-bottom: 0;
-}
-
 .commitment-doctor {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
     gap: 12px;
 }
 
@@ -460,14 +456,8 @@ body:not(.is-mobile) .modal.commitment-graph-modal {
 
 .commitment-doctor .cd-list {
     display: flex;
-    flex: 1 1 auto;
     flex-direction: column;
     gap: 18px;
-    min-height: 0;
-    max-height: 60vh;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
     padding-right: 2px;
 }
 

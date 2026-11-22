@@ -726,7 +726,7 @@ export class GraphTree {
         this.input = document.createElement("input");
         this.toggleAll = document.createElement("button");
         this.stats = container.createEl("p", { cls: "cg-stats" });
-        this.list = container.createDiv({ cls: "cg-list" });
+        this.list = container.createDiv({ cls: "cg-list commitment-modal__scroll" });
         this.empty = document.createElement("div");
         this.empty.className = "cg-empty";
         this.empty.hidden = true;

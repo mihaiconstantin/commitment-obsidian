@@ -49,6 +49,9 @@ describe("Doctor presenter", () => {
 
         // Require the titled, healthy modal and no source actions.
         expect(currentModal().titleEl.textContent).toBe(CONFIG.DOCTOR_TITLE);
+        expect(currentModal().modalEl.classList.contains("commitment-modal")).toBe(true);
+        expect(currentModal().modalEl.classList.contains("mod-lg")).toBe(true);
+        expect(currentModal().contentEl.querySelector(":scope > .commitment-doctor")).not.toBeNull();
         expect(document.querySelector(".cd-empty")?.textContent).toContain(
             "No issues found.",
         );
@@ -88,6 +91,11 @@ describe("Doctor presenter", () => {
             "Unresolved anchors 1",
             "Underfilled programs 1",
         ]);
+
+        // Require the shared scroll region.
+        expect(
+            document.querySelector(".cd-list")?.classList.contains("commitment-modal__scroll"),
+        ).toBe(true);
 
         // Require every path as a labeled file action.
         const actions: readonly (string | null)[] = Array.from(
@@ -376,9 +384,9 @@ describe("Doctor presenter", () => {
         // Read the shipped stylesheet.
         const styles: string = readFileSync("assets/styles.css", "utf8");
 
-        // The list scrolls inside the modal.
+        // The shared scroll region scrolls inside the modal.
         expect(styles).toMatch(
-            /\.commitment-doctor \.cd-list\s*{[^}]*overflow-y:\s*auto;/s,
+            /\.commitment-modal__scroll\s*{[^}]*overflow-y:\s*auto;/s,
         );
         // Long paths wrap instead of overflowing.
         expect(styles).toMatch(
