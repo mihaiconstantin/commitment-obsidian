@@ -35,6 +35,9 @@ export class DoctorModal extends CommitmentModal {
     /** Shared policy for resolving and opening a source path. */
     private readonly opener: VaultFileOpener;
 
+    /** Keep the base modal from focusing its first input when opened. */
+    public hasInitialInputFocus: boolean = false;
+
     /** Whether one source file is already opening. */
     private opening = false;
 
