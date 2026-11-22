@@ -345,13 +345,6 @@
     padding: 0 1px;
 }
 
-/* Reserve the 22px the retired colour legend held, so the last row keeps its
-   gutter inside the rounded modal. */
-.commitment-graph__tree-host .cg-gutter {
-    flex: none;
-    height: 22px;
-}
-
 .commitment-graph__tree-host .cg-empty {
     padding: 34px 8px;
     text-align: center;
@@ -417,6 +410,10 @@ body:not(.is-mobile) .modal.commitment-modal {
     flex: 1 1 auto;
     flex-direction: column;
     min-height: 0;
+    padding-bottom: max(
+        var(--commitment-modal-bottom-inset),
+        var(--safe-area-inset-bottom, 0px)
+    );
 }
 
 /* Let one scroll region fill the content. */

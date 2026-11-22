@@ -122,7 +122,7 @@ export class GraphTree {
         container.style.setProperty("--cg-program", appearance.program);
     }
 
-    /** Build the toolbar, stats line, list, and footer gutter. */
+    /** Build the toolbar, stats line, and list. */
     private buildChrome(container: HTMLElement): void {
         // Build the search icon, field, and shortcut hint.
         const searchIcon: HTMLElement = this.search.createEl("span", { cls: "cg-search-icon" });
@@ -146,11 +146,8 @@ export class GraphTree {
         // Mark the stats line as a live status region.
         this.stats.setAttribute("role", "status");
 
-        // Build the footer gutter that keeps the list clear of the modal edge.
-        const gutter: HTMLElement = container.createDiv({ cls: "cg-gutter" });
-
-        // Assemble the toolbar, stats line, scrolling list, and gutter.
-        container.append(tools, this.stats, this.list, gutter);
+        // Assemble the toolbar, stats line, and scrolling list.
+        container.append(tools, this.stats, this.list);
     }
 
     /** Bind the filter and expand controls. */

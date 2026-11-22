@@ -144,8 +144,8 @@ describe("graph tree", () => {
         expect(host.querySelector(".cg-stats")?.textContent).toBe(
             "2 areas · 4 projects · 1 program",
         );
-        expect(host.querySelector(".cg-list")).not.toBeNull();
-        expect(host.querySelector(".cg-gutter")).not.toBeNull();
+        expect(host.querySelector(".cg-list")?.classList.contains("commitment-modal__scroll")).toBe(true);
+        expect(host.querySelector(".cg-gutter")).toBeNull();
         expect(host.querySelector(".cg-empty")?.hasAttribute("hidden")).toBe(true);
     });
 

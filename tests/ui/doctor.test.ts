@@ -392,10 +392,26 @@ describe("Doctor presenter", () => {
         expect(styles).toMatch(
             /\.commitment-doctor \.cd-path\s*{[^}]*overflow-wrap:\s*anywhere;/s,
         );
-        // Narrow screens give every path a touch-sized target.
+        // The shared shell owns the fixed bottom inset outside the scrollport.
+        expect(styles).toMatch(
+            /\.modal\.commitment-modal\s*{[^}]*--commitment-modal-bottom-inset:\s*20px;/s,
+        );
+        expect(styles).toMatch(
+            /\.modal\.commitment-modal\s*{[^}]*padding-bottom:\s*0;/s,
+        );
+        expect(styles).toMatch(
+            /\.commitment-modal__body\s*{[^}]*padding-bottom:\s*max\(\s*var\(--commitment-modal-bottom-inset\),\s*var\(--safe-area-inset-bottom,\s*0px\)\s*\);/s,
+        );
+        // The Doctor list must not impose its own scroll height or end gap.
         const doctorStyles: string = styles.slice(
             styles.indexOf("/* Doctor diagnostics. */"),
         );
+        const listRule: string = doctorStyles.match(
+            /\.commitment-doctor \.cd-list\s*{([^}]*)}/s,
+        )?.[1] ?? "";
+        expect(listRule).not.toContain("max-height");
+        expect(listRule).not.toContain("padding-bottom");
+        // Narrow screens give every path a touch-sized target.
         expect(doctorStyles).toMatch(
             /@media \(max-width: 560px\)[\s\S]*?\.commitment-doctor \.cd-path\s*{[^}]*min-height:\s*40px;/s,
         );
