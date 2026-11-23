@@ -8,8 +8,9 @@ dist/
 # Docs artifacts.
 cache/
 
-# VS Code.
+# VS Code files.
 .vscode/
+*.code-workspace
 
 # Archives.
 archive/
