@@ -7,13 +7,14 @@
  * theme.
  */
 
-import { Notice, setIcon } from "obsidian";
+import { Menu, Notice, setIcon } from "obsidian";
 
 import { CONFIG } from "../constants";
 import type { ContainerFileAction, ContainerFileActions } from "../containers/container-file-actions";
+import { PROJECT_STATES, type ProjectState } from "../graph/project-state";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
-import { countLabel } from "../helpers/strings";
-import type { AppearanceSettings, GraphSort } from "../settings/settings";
+import { countLabel, titleCase } from "../helpers/strings";
+import type { AppearanceSettings, GraphSort, TreeDefaultsSettings } from "../settings/settings";
 import { TreeModel } from "./tree-model";
 import type { AreaView } from "./tree-model";
 
@@ -64,6 +65,9 @@ interface AreaElements {
     /** Visible project count beside the area name. */
     readonly num: HTMLElement;
 
+    /** Meter fill whose width follows the visible project count. */
+    readonly fill: HTMLElement;
+
     /** Direct project rows. */
     readonly projects: readonly ProjectElements[];
 
@@ -75,11 +79,11 @@ interface AreaElements {
 /**
  * Interactive tree of areas, programs, and projects.
  *
- * `TreeModel` owns the active query, the configured order, and totals. The
- * class owns the toolbar and list elements, the row markup, filtering, the copy
- * notice, and the single in-flight file action. Areas and programs fold
- * natively, so the tree builds its rows once in display order and only hides
- * them afterwards.
+ * `TreeModel` owns the active filters, the configured order, and totals. The
+ * class owns the toolbar, filter controls, and list elements, the row markup,
+ * filtering, the copy notice, and the single in-flight file action. Areas and
+ * programs fold natively, so the tree builds its rows once in display order
+ * and only hides them afterwards.
  */
 export class GraphTree {
     /** File action seam, or null when the surface offers no file actions. */
@@ -97,7 +101,16 @@ export class GraphTree {
     /** Control that expands or collapses every entry. */
     private readonly toggleAll: HTMLButtonElement;
 
-    /** Totals line below the tools. */
+    /** Button that opens the project-state menu. */
+    private readonly projectStateButton: HTMLButtonElement;
+
+    /** Button that opens the program-state menu. */
+    private readonly programStateButton: HTMLButtonElement;
+
+    /** Checkbox that hides explicitly inactive areas. */
+    private readonly inactiveBox: HTMLInputElement;
+
+    /** Totals line below the filters. */
     private readonly stats: HTMLElement;
 
     /** Scrolling list of rows. */
@@ -109,7 +122,7 @@ export class GraphTree {
     /** Built area elements in display order. */
     private readonly areaElements: AreaElements[] = [];
 
-    /** Open state captured when a query starts, or null outside a query. */
+    /** Open state captured when a filter starts, or null outside a filter. */
     private openSnapshot: Map<HTMLDetailsElement, boolean> | null = null;
 
     /** Whether one file action is already running. */
@@ -122,7 +135,7 @@ export class GraphTree {
         container.style.setProperty("--cg-program", appearance.program);
     }
 
-    /** Build the toolbar, stats line, and list. */
+    /** Build the toolbar, filters, stats line, and list. */
     private buildChrome(container: HTMLElement): void {
         // Build the search icon, field, and shortcut hint.
         const searchIcon: HTMLElement = this.search.createEl("span", { cls: "cg-search-icon" });
@@ -143,11 +156,36 @@ export class GraphTree {
         const tools: HTMLElement = container.createDiv({ cls: "cg-tools" });
         tools.append(this.search, this.toggleAll);
 
+        // Build the filter row and both state menus.
+        const filters: HTMLElement = container.createDiv({ cls: "cg-filters" });
+        const projectStates: HTMLElement = filters.createDiv({ cls: "cg-states" });
+        this.projectStateButton.type = "button";
+        this.projectStateButton.className = "cg-btn cg-states-button";
+        this.projectStateButton.dataset.cgStateScope = "project";
+        this.projectStateButton.setAttribute("aria-haspopup", "menu");
+        this.projectStateButton.setAttribute("aria-expanded", "false");
+        this.projectStateButton.title = "Select project states";
+        projectStates.append(this.projectStateButton);
+
+        // Add the program state menu beside the project state menu.
+        const programStates: HTMLElement = filters.createDiv({ cls: "cg-states" });
+        this.programStateButton.type = "button";
+        this.programStateButton.className = "cg-btn cg-states-button";
+        this.programStateButton.dataset.cgStateScope = "program";
+        this.programStateButton.setAttribute("aria-haspopup", "menu");
+        this.programStateButton.setAttribute("aria-expanded", "false");
+        this.programStateButton.title = "Select program states";
+        programStates.append(this.programStateButton);
+
+        // Add the area relevance checkbox outside the state groups.
+        const inactiveLabel: HTMLElement = filters.createEl("label", { cls: "cg-check" });
+        inactiveLabel.append(this.inactiveBox, document.createTextNode("Active Areas"));
+
         // Mark the stats line as a live status region.
         this.stats.setAttribute("role", "status");
 
-        // Assemble the toolbar, stats line, and scrolling list.
-        container.append(tools, this.stats, this.list);
+        // Assemble the toolbar, filters, stats line, and scrolling list.
+        container.append(tools, filters, this.stats, this.list);
     }
 
     /** Bind the filter and expand controls. */
@@ -156,6 +194,35 @@ export class GraphTree {
         this.input.addEventListener("input", (): void => {
             // Read the latest trimmed query and apply it immediately.
             this.model.setQuery(this.input.value.trim());
+            this.applyFilter();
+        });
+
+        // Open the native project-state menu from the button.
+        this.projectStateButton.addEventListener("click", (event: MouseEvent): void => {
+            // Show the menu at the click position.
+            this.openStateMenu(
+                event,
+                this.projectStateButton,
+                this.model.getStates(),
+                (states: ReadonlySet<ProjectState>): void => this.model.setStates(states),
+            );
+        });
+
+        // Open the native program-state menu from the button.
+        this.programStateButton.addEventListener("click", (event: MouseEvent): void => {
+            // Show the menu at the click position.
+            this.openStateMenu(
+                event,
+                this.programStateButton,
+                this.model.getProgramStates(),
+                (states: ReadonlySet<ProjectState>): void => this.model.setProgramStates(states),
+            );
+        });
+
+        // Filter as soon as the area checkbox changes.
+        this.inactiveBox.addEventListener("change", (): void => {
+            // Apply the latest area relevance choice.
+            this.model.setHideInactiveAreas(this.inactiveBox.checked);
             this.applyFilter();
         });
 
@@ -190,10 +257,66 @@ export class GraphTree {
         });
     }
 
+    /** Update one state button label to its current selection count. */
+    private updateStateButton(button: HTMLButtonElement, label: string, selected: ReadonlySet<ProjectState>): void {
+        // Report the selected share of the fixed vocabulary.
+        button.textContent = `${label}: ${selected.size}/${PROJECT_STATES.length}`;
+        button.setAttribute(
+            "aria-label",
+            `${label}: ${selected.size} of ${PROJECT_STATES.length} selected`,
+        );
+    }
+
+    /** Open one native state menu at the click position. */
+    private openStateMenu(event: MouseEvent, button: HTMLButtonElement, selected: ReadonlySet<ProjectState>, setStates: (states: ReadonlySet<ProjectState>) => void): void {
+        // Build one menu from the current selection.
+        const menu: Menu = new Menu();
+
+        // Add one checkable item per recognized state.
+        for (const state of PROJECT_STATES) {
+            menu.addItem((item): void => {
+                // Label the item with the state name.
+                item.setTitle(titleCase(state));
+
+                // Mark the current selection.
+                item.setChecked(selected.has(state));
+
+                // Toggle the state and refresh the tree.
+                item.onClick((): void => {
+                    // Copy the current selection before changing it.
+                    const next: Set<ProjectState> = new Set<ProjectState>(selected);
+
+                    // Toggle the clicked state.
+                    if (next.has(state)) {
+                        next.delete(state);
+                    } else {
+                        next.add(state);
+                    }
+
+                    // Apply the new selection and close the menu.
+                    setStates(next);
+                    this.applyFilter();
+                    menu.hide();
+                });
+            });
+        }
+
+        // Clear the expanded marker whenever the menu closes.
+        menu.onHide((): void => {
+            button.setAttribute("aria-expanded", "false");
+        });
+
+        // Mark the button expanded and show the native menu.
+        button.setAttribute("aria-expanded", "true");
+        menu.showAtMouseEvent(event);
+    }
+
     /** Copy one identifier through the clipboard and report the result. */
     private copyIdentifier(identifier: string): void {
         // Read the asynchronous clipboard when the surface exposes one.
         const clipboard: Clipboard | undefined = navigator.clipboard;
+
+        // Reject a surface without an asynchronous clipboard.
         if (clipboard?.writeText === undefined) {
             // Report the unavailable clipboard.
             new Notice("Copy failed");
@@ -223,6 +346,8 @@ export class GraphTree {
 
         // Acquire the single activation guard.
         this.activating = true;
+
+        // Activate the row while the guard is held.
         try {
             // Let the seam open or create the file.
             await this.actions.activate(identity);
@@ -283,12 +408,7 @@ export class GraphTree {
     }
 
     /** Build one project row at the supplied depth. */
-    private projectRow(
-        identifier: string,
-        depth: number,
-        area: string,
-        program: string | null,
-    ): ProjectElements {
+    private projectRow(identifier: string, depth: number, area: string, program: string | null): ProjectElements {
         // Create the row wrapper.
         const row: HTMLElement = document.createElement("div");
         row.className = "cg-row";
@@ -365,8 +485,10 @@ export class GraphTree {
         // Add the area header line.
         details.append(line);
 
-        // Build each direct project row.
+        // Start the direct project rows.
         const projects: ProjectElements[] = [];
+
+        // Build each direct project row.
         for (const project of area.projects) {
             // Build and attach the direct project row.
             const projectElements: ProjectElements = this.projectRow(project, 1, area.id, null);
@@ -374,8 +496,10 @@ export class GraphTree {
             details.append(projectElements.row);
         }
 
-        // Build each program row and its coordinated projects.
+        // Start the program groups.
         const programs: ProgramElements[] = [];
+
+        // Build each program row and its coordinated projects.
         for (const program of area.programs) {
             // Build and attach the program group.
             const programElements: ProgramElements = this.buildProgram(area, program);
@@ -389,6 +513,7 @@ export class GraphTree {
             details,
             name,
             num,
+            fill,
             projects,
             programs,
         };
@@ -427,8 +552,10 @@ export class GraphTree {
         // Add the program header line.
         details.append(line);
 
-        // Build each coordinated project row.
+        // Start the coordinated project rows.
         const projects: ProjectElements[] = [];
+
+        // Build each coordinated project row.
         for (const project of program.projects) {
             // Build and attach the program project row.
             const projectElements: ProjectElements = this.projectRow(project, 2, area.id, program.id);
@@ -469,24 +596,31 @@ export class GraphTree {
         ]);
     }
 
-    /** Report whether every area and program is expanded. */
+    /** Report whether every visible area and program is expanded. */
     private allExpanded(): boolean {
-        // Report whether every details element is open.
-        return this.details().every((details) => details.open);
+        // Ignore rows hidden by the active filters.
+        const visible: readonly HTMLDetailsElement[] = this.details().filter(
+            (details: HTMLDetailsElement): boolean => details.closest("[hidden]") === null,
+        );
+
+        // Report whether every visible row is open.
+        return visible.every((details: HTMLDetailsElement): boolean => details.open);
     }
 
-    /** Capture the open state before a query forces rows open. */
+    /** Capture the open state before a filter forces rows open. */
     private snapshotOpenStates(): void {
         // Record every area and program state by its own element.
         this.openSnapshot = new Map(this.details().map((details) => [details, details.open]));
     }
 
-    /** Restore the open state captured before the query started. */
+    /** Restore the open state captured before a filter started. */
     private restoreOpenStates(): void {
         // Read the captured state.
         const snapshot: Map<HTMLDetailsElement, boolean> | null = this.openSnapshot;
+
+        // Stop when no filter captured a state.
         if (snapshot === null) {
-            // Leave the current state when no query captured one.
+            // Leave the current state when no filter captured one.
             return;
         }
 
@@ -496,54 +630,68 @@ export class GraphTree {
         }
     }
 
-    /** Hide rows outside the query and refresh highlights, counts, and stats. */
+    /** Hide rows outside the filters and refresh highlights, counts, and stats. */
     private applyFilter(): void {
-        // Read the active query.
+        // Read the active query for highlighting.
         const query: string = this.model.getQuery();
 
-        // Capture the native fold state when a query starts.
-        if (query !== "") {
-            // Capture once so later keystrokes keep the original state.
-            if (this.openSnapshot === null) {
-                // Capture every area and program state.
-                this.snapshotOpenStates();
+        // Read whether the active filters match the opening defaults.
+        const atDefaults: boolean = this.model.isAtDefaults();
+
+        // Read whether any tree filter is active for the stats line.
+        const filtering: boolean = this.model.isFiltering();
+
+        // Treat the opening defaults and the unfiltered state as idle.
+        const idle: boolean = atDefaults || !filtering;
+
+        // Restore the fold state when the tree returns to an idle state.
+        if (idle) {
+            // Restore once and discard the snapshot.
+            if (this.openSnapshot !== null) {
+                // Restore the state captured before the filter.
+                this.restoreOpenStates();
+                this.openSnapshot = null;
             }
-        } else if (this.openSnapshot !== null) {
-            // Restore the state captured before the query.
-            this.restoreOpenStates();
-            this.openSnapshot = null;
+        } else if (this.openSnapshot === null) {
+            // Capture the native fold state when a user filter starts.
+            this.snapshotOpenStates();
         }
 
-        // Count the visible areas and projects for the stats line.
+        // Count the visible areas, projects, and programs for the stats line.
         let visibleAreas: number = 0;
         let visibleProjects: number = 0;
+        let visiblePrograms: number = 0;
 
         // Update every built area in place.
         for (const area of this.areaElements) {
-            // Read the part of the area that survives the query.
+            // Read the part of the area that survives the filters.
             const view: AreaView = this.model.filterArea(area.area);
 
-            // Hide the area when nothing inside it matches.
+            // Hide the area unless the filters keep it visible.
             area.details.hidden = !view.visible;
 
-            // Update the area highlight, visible count, and query fold state.
+            // Update the area highlight, visible count, meter, and fold state.
             this.writeMarkedText(area.name, area.area.id, query);
             area.num.textContent = String(view.total);
-            if (query !== "" && view.visible) {
-                // Open every visible area while filtering.
+            const maxTotal: number = this.model.getMaxTotal();
+            area.fill.style.width = `${maxTotal === 0 ? 0 : Math.round(view.total / maxTotal * 100)}%`;
+
+            // Open every visible area while filtering.
+            if (!idle && view.visible) {
                 area.details.open = true;
             }
 
-            // Count the visible area and its projects.
+            // Count the visible area and its projects and programs.
             if (view.visible) {
                 visibleAreas += 1;
                 visibleProjects += view.total;
+                visiblePrograms += view.programs.length;
             }
 
             // Index the visible direct projects.
             const direct: Set<string> = new Set<string>(view.projects);
 
-            // Hide each direct project outside the query.
+            // Hide each direct project outside the filters.
             for (const project of area.projects) {
                 // Toggle the row without rebuilding it.
                 project.row.hidden = !direct.has(project.id);
@@ -552,8 +700,10 @@ export class GraphTree {
                 this.writeMarkedText(project.name, project.id, query);
             }
 
-            // Index the visible programs and their projects.
+            // Start the visible program index.
             const programs: Map<string, readonly string[]> = new Map<string, readonly string[]>();
+
+            // Index the visible programs and their projects.
             for (const program of view.programs) {
                 // Retain the visible project identifiers.
                 programs.set(program.id, program.projects);
@@ -570,15 +720,16 @@ export class GraphTree {
                 // Update the program highlight and visible count.
                 this.writeMarkedText(program.name, program.id, query);
                 program.num.textContent = String(kept?.length ?? 0);
-                if (query !== "" && kept !== undefined) {
-                    // Open every visible program while filtering.
+
+                // Open every visible program while filtering.
+                if (!idle && kept !== undefined) {
                     program.details.open = true;
                 }
 
                 // Index the visible coordinated projects.
                 const visible: Set<string> = new Set<string>(kept ?? []);
 
-                // Hide each coordinated project outside the query.
+                // Hide each coordinated project outside the filters.
                 for (const project of program.projects) {
                     // Toggle the row without rebuilding it.
                     project.row.hidden = !visible.has(project.id);
@@ -590,18 +741,40 @@ export class GraphTree {
         }
 
         // Report an empty result instead of a blank list.
-        this.empty.textContent = query === "" ? "No areas." : `No match for \`${query}\`.`;
+        this.empty.textContent = this.model.emptyMessage();
         this.empty.hidden = visibleAreas > 0;
 
-        // Report the filtered or complete totals.
+        // Report the filtered or complete totals for every dimension.
         const totalProjects: number = this.model.getTotalProjects();
         const totalPrograms: number = this.model.getTotalPrograms();
-        this.stats.textContent = query === ""
-            ? `${countLabel(this.model.getAreaCount(), "area")} · ${countLabel(totalProjects, "project")} · ${countLabel(totalPrograms, "program")}`
-            : `${visibleProjects} of ${countLabel(totalProjects, "project")}`;
+        this.stats.textContent = [
+            this.summaryCount(visibleAreas, this.model.getAreaCount(), "area", filtering),
+            this.summaryCount(visibleProjects, totalProjects, "project", filtering),
+            this.summaryCount(visiblePrograms, totalPrograms, "program", filtering),
+        ].join(" · ");
 
         // Reflect the current fold state in the single control.
         this.updateToggleAll();
+
+        // Reflect both current state selections in the menu buttons.
+        this.updateStateButton(this.projectStateButton, "Project States", this.model.getStates());
+        this.updateStateButton(
+            this.programStateButton,
+            "Program States",
+            this.model.getProgramStates(),
+        );
+    }
+
+    /** Return one summary count with its visible share when filtering. */
+    private summaryCount(visible: number, total: number, singular: string, filtering: boolean): string {
+        // Keep a plain count for an unfiltered or empty dimension.
+        if (!filtering || total === 0) {
+            // Report the count without an empty visible-of-total ratio.
+            return countLabel(visible, singular);
+        }
+
+        // Report the visible share of the non-empty dimension.
+        return `${visible} of ${countLabel(total, singular)}`;
     }
 
     /** Return one detached row line. */
@@ -697,16 +870,10 @@ export class GraphTree {
     }
 
     /** Construct and mount one tree inside the supplied container. */
-    public constructor(
-        container: HTMLElement,
-        areas: readonly GraphArea[],
-        sort: GraphSort,
-        actions: ContainerFileActions | null,
-        appearance: AppearanceSettings,
-    ) {
+    public constructor(container: HTMLElement, areas: readonly GraphArea[], sort: GraphSort, actions: ContainerFileActions | null, appearance: AppearanceSettings, defaults: TreeDefaultsSettings) {
         // Store the file action seam and the ordered tree model.
         this.actions = actions;
-        this.model = new TreeModel(areas, sort);
+        this.model = new TreeModel(areas, sort, defaults);
 
         // Apply the stored type accents before building the rows.
         this.applyAppearance(container, appearance);
@@ -722,11 +889,19 @@ export class GraphTree {
         this.search = container.createDiv({ cls: "cg-search" });
         this.input = document.createElement("input");
         this.toggleAll = document.createElement("button");
+        this.projectStateButton = document.createElement("button");
+        this.programStateButton = document.createElement("button");
         this.stats = container.createEl("p", { cls: "cg-stats" });
         this.list = container.createDiv({ cls: "cg-list commitment-modal__scroll" });
         this.empty = document.createElement("div");
         this.empty.className = "cg-empty";
         this.empty.hidden = true;
+
+        // Create the area relevance checkbox with its configured default.
+        this.inactiveBox = document.createElement("input");
+        this.inactiveBox.type = "checkbox";
+        this.inactiveBox.dataset.cgScope = "area";
+        this.inactiveBox.checked = defaults.hideInactiveAreas;
 
         // Assemble the chrome and build every row once.
         this.buildChrome(container);

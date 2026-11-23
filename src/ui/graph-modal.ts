@@ -76,6 +76,7 @@ export class GraphModal extends CommitmentModal {
             this.presentation.sort,
             actions,
             this.appearance,
+            this.presentation.treeDefaults,
         );
 
         // Bind "/" to the search field through the modal keymap.
