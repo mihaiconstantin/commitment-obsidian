@@ -4,6 +4,7 @@
 
 import { CONFIG } from "../constants";
 import { IdStyleCatalog, type IdStyle } from "../containers/file-name";
+import { PROJECT_STATES, isProjectState, type ProjectState } from "../graph/project-state";
 import type { CommitmentLevel } from "../graph/types";
 import { ownValue } from "../helpers/utils";
 
@@ -45,6 +46,19 @@ export interface CommitmentCreationSettings {
 }
 
 
+/** Default filters applied when a tree opens. */
+export interface TreeDefaultsSettings {
+    /** Project states checked when a tree opens. */
+    readonly projectStates: readonly ProjectState[];
+
+    /** Program states checked when a tree opens. */
+    readonly programStates: readonly ProjectState[];
+
+    /** Whether explicitly inactive areas are hidden when a tree opens. */
+    readonly hideInactiveAreas: boolean;
+}
+
+
 /** Presentation settings stored in the plugin data file. */
 export interface PresentationSettings {
     /** Shape used to present the graph. */
@@ -52,6 +66,9 @@ export interface PresentationSettings {
 
     /** Order used for graph areas. */
     readonly sort: GraphSort;
+
+    /** Default filters applied when a tree opens. */
+    readonly treeDefaults: TreeDefaultsSettings;
 }
 
 
@@ -169,6 +186,55 @@ export class SettingsReader {
         return /^#[0-9a-f]{6}$/.test(color) ? color : fallback;
     }
 
+    /** Read one state selection in canonical order, falling back on malformed data. */
+    private readStates(value: unknown, fallback: readonly ProjectState[]): readonly ProjectState[] {
+        // Require a stored array.
+        if (!Array.isArray(value)) {
+            // Use the shipped selection.
+            return fallback;
+        }
+
+        // Start the recognized state set.
+        const selected: Set<ProjectState> = new Set<ProjectState>();
+
+        // Keep only recognized states and remove duplicates.
+        for (const candidate of value) {
+            // Add each recognized state.
+            if (isProjectState(candidate)) {
+                // Store the state for canonical ordering.
+                selected.add(candidate);
+            }
+        }
+
+        // Fall back when a non-empty array has no recognized state.
+        if (selected.size === 0 && value.length > 0) {
+            // Treat the malformed selection as unset.
+            return fallback;
+        }
+
+        // Return the selection in the closed vocabulary order.
+        return PROJECT_STATES.filter((state: ProjectState): boolean => selected.has(state));
+    }
+
+    /** Read the default tree filters without trusting their shape. */
+    private readTreeDefaults(value: unknown): TreeDefaultsSettings {
+        // Read both state selections and the area flag independently.
+        const projectStates: readonly ProjectState[] = this.readStates(
+            ownValue(value, "projectStates"),
+            CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults.projectStates,
+        );
+        const programStates: readonly ProjectState[] = this.readStates(
+            ownValue(value, "programStates"),
+            CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults.programStates,
+        );
+
+        // Require the exact boolean true for the area flag.
+        const hideInactiveAreas: boolean = ownValue(value, "hideInactiveAreas") === true;
+
+        // Return the normalized defaults.
+        return { projectStates, programStates, hideInactiveAreas };
+    }
+
     /** Read the accent color for each supported level. */
     private readAppearance(value: unknown): AppearanceSettings {
         // Read each supported level and ignore unknown level keys.
@@ -224,6 +290,11 @@ export class SettingsReader {
             ? storedSort
             : CONFIG.DEFAULT_SETTINGS.presentation.sort;
 
+        // Read the default tree filters without trusting their shape.
+        const treeDefaults: TreeDefaultsSettings = this.readTreeDefaults(
+            ownValue(presentation, "treeDefaults"),
+        );
+
         // Read the accent colors without trusting their shape.
         const appearance: AppearanceSettings = this.readAppearance(ownValue(data, "appearance"));
 
@@ -245,7 +316,7 @@ export class SettingsReader {
 
         // Return the normalized settings shape.
         return {
-            presentation: { mode, sort },
+            presentation: { mode, sort, treeDefaults },
             appearance,
             creation: { idStyle, ...creation },
         };

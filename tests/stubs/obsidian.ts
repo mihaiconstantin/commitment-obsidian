@@ -341,6 +341,30 @@ export class ExtraButtonComponent {
 }
 
 
+/** Toggle control used by the settings stub. */
+export class ToggleComponent {
+    /** Current control value. */
+    value = false;
+
+    /** Registered change handler. */
+    change: ((value: boolean) => void) | null = null;
+
+    /** Set the current value without firing the handler. */
+    setValue(value: boolean): ToggleComponent {
+        // Store the toggle value.
+        this.value = value;
+        return this;
+    }
+
+    /** Register the change handler. */
+    onChange(handler: (value: boolean) => void): ToggleComponent {
+        // Store the handler for the setting stub.
+        this.change = handler;
+        return this;
+    }
+}
+
+
 export class Setting {
     static instances: Setting[] = [];
 
@@ -351,6 +375,7 @@ export class Setting {
     value = "";
     change: ((value: string) => void) | null = null;
     color: ColorComponent | null = null;
+    toggle: ToggleComponent | null = null;
     reset: (() => void) | null = null;
     heading = false;
 
@@ -421,6 +446,22 @@ export class Setting {
             ? null
             : (value: string): void => {
                 this.value = value;
+                handler(value);
+            };
+        return this;
+    }
+
+    addToggle(build: (toggle: ToggleComponent) => void): this {
+        // Build the toggle control and retain its value and handler.
+        const control: ToggleComponent = new ToggleComponent();
+        build(control);
+        this.toggle = control;
+        this.value = control.value ? "true" : "false";
+        const handler: ((value: boolean) => void) | null = control.change;
+        control.change = handler === null
+            ? null
+            : (value: boolean): void => {
+                this.value = value ? "true" : "false";
                 handler(value);
             };
         return this;

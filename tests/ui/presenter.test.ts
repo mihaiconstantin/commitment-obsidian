@@ -17,8 +17,16 @@ import type { PresentationSettings } from "../../src/settings/settings";
 import { FakeVault } from "../support/fake-vault";
 
 
-const JSON_PRESENTATION: PresentationSettings = { mode: "json", sort: "name" };
-const TREE_PRESENTATION: PresentationSettings = { mode: "tree", sort: "name" };
+const JSON_PRESENTATION: PresentationSettings = {
+    mode: "json",
+    sort: "name",
+    treeDefaults: CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults,
+};
+const TREE_PRESENTATION: PresentationSettings = {
+    mode: "tree",
+    sort: "name",
+    treeDefaults: CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults,
+};
 
 
 /** Build one graph and its diagnostics from canonical inputs. */

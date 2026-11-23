@@ -10,12 +10,14 @@
  */
 
 import type { IdStyle } from "./containers/file-name";
+import { PROJECT_STATES } from "./graph/project-state";
 import type { CommitmentLevel } from "./graph/types";
 import type {
     AppearanceSettings,
     CommitmentSettings,
     GraphSort,
     PresentationMode,
+    TreeDefaultsSettings,
 } from "./settings/settings";
 
 
@@ -46,9 +48,17 @@ const defaultAppearance: AppearanceSettings = {
 };
 
 
+/** Tree filters used before the data file supplies any. */
+const defaultTreeDefaults: TreeDefaultsSettings = {
+    projectStates: PROJECT_STATES,
+    programStates: PROJECT_STATES,
+    hideInactiveAreas: false,
+};
+
+
 /** Settings used before the data file supplies any. */
 const defaultSettings: CommitmentSettings = {
-    presentation: { mode: "json", sort: "name" },
+    presentation: { mode: "json", sort: "name", treeDefaults: defaultTreeDefaults },
     appearance: defaultAppearance,
     creation: {
         idStyle: defaultIdStyle,
