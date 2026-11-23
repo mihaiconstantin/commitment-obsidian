@@ -23,11 +23,7 @@ function fileName(identity: ContainerIdentity): string {
 
 
 /** Return a file name for one identity, pattern, and style. */
-function fileNameWith(
-    identity: ContainerIdentity,
-    pattern: string,
-    style: IdStyle = CONFIG.DEFAULT_ID_STYLE,
-): string {
+function fileNameWith(identity: ContainerIdentity, pattern: string, style: IdStyle = CONFIG.DEFAULT_ID_STYLE): string {
     return new ContainerPathBuilder("", pattern, style).fileName(identity);
 }
 
@@ -39,12 +35,7 @@ function sanitize(id: string): string {
 
 
 /** Return the vault path for one identity, folder, pattern, and style. */
-function pathWith(
-    identity: ContainerIdentity,
-    folder: string,
-    pattern: string = "",
-    style: IdStyle = CONFIG.DEFAULT_ID_STYLE,
-): string {
+function pathWith(identity: ContainerIdentity, folder: string, pattern: string = "", style: IdStyle = CONFIG.DEFAULT_ID_STYLE): string {
     return new ContainerPathBuilder(folder, pattern, style).path(identity);
 }
 

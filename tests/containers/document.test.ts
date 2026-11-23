@@ -14,12 +14,7 @@ const composer: ContainerDocumentComposer = new ContainerDocumentComposer();
 
 
 /** Build one identity for composition tests. */
-function identity(
-    kind: "area" | "program" | "project",
-    id: string,
-    area: string = "work",
-    program: string | null = null,
-): ContainerIdentity {
+function identity(kind: "area" | "program" | "project", id: string, area: string = "work", program: string | null = null): ContainerIdentity {
     return { kind, id, area, program };
 }
 

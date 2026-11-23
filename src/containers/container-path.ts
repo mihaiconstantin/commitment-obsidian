@@ -40,11 +40,7 @@ export class ContainerPathBuilder {
     }
 
     /** Construct a builder for one folder, pattern, and identifier style. */
-    public constructor(
-        folder: string = "",
-        pattern: string = "",
-        style: IdStyle = CONFIG.DEFAULT_ID_STYLE,
-    ) {
+    public constructor(folder: string = "", pattern: string = "", style: IdStyle = CONFIG.DEFAULT_ID_STYLE) {
         // Store the folder, pattern, and identifier style used by every call.
         this.folder = folder;
         this.pattern = pattern;
