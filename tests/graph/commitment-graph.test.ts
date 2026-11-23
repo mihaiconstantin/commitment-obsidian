@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { Diagnostics } from "../../src/diagnostics/diagnostics";
-import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
+import { Diagnostics, type Diagnostic } from "../../src/diagnostics/diagnostics";
+import { GraphBuilder, type GraphBuild as GraphReadModel } from "../../src/graph/builder";
 import type { ProjectState } from "../../src/graph/project-state";
 import type { CanonicalInput, GraphArea, GraphProgram } from "../../src/graph/types";
 
 
-/** Build one graph and its diagnostics from canonical inputs. */
-function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
-    return new GraphBuilder(inputs, new Diagnostics()).build();
+/** One test build with diagnostics collected from its graph read model. */
+interface TestGraphBuild extends GraphReadModel {
+    /** Findings collected from the normalized data. */
+    readonly diagnostics: readonly Diagnostic[];
+}
+
+
+/** Build one graph and collect diagnostics from its read model. */
+function buildGraph(inputs: readonly CanonicalInput[], diagnostics: Diagnostics = new Diagnostics()): TestGraphBuild {
+    // Build the graph read model first.
+    const build: GraphReadModel = new GraphBuilder(inputs).build();
+
+    // Collect findings from the normalized data.
+    return { ...build, diagnostics: diagnostics.collect(build.normalized, build.programs) };
 }
 
 
@@ -170,7 +181,7 @@ const DUPLICATE_CASES: readonly DuplicateCase[] = [
 describe("commitment graph", () => {
     it("derives containerless areas and programs", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "phd"),
             project("projects/beta.md", "beta", "work", "phd"),
             project("projects/gamma.md", "gamma", "work"),
@@ -197,7 +208,7 @@ describe("commitment graph", () => {
 
     it("keeps container-only areas and programs", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             area("areas/empty.md", "empty"),
             program("programs/phd.md", "phd", "work"),
             project("projects/alpha.md", "alpha", "work", "phd"),
@@ -209,15 +220,15 @@ describe("commitment graph", () => {
     });
 
     it("keeps findings independent when reusing diagnostics", () => {
-        // Reuse one injected collaborator across different graph builds.
+        // Reuse one diagnostics collector across different graph builds.
         const diagnostics: Diagnostics = new Diagnostics();
-        const unresolved: GraphBuild = new GraphBuilder([
+        const unresolved: TestGraphBuild = buildGraph([
             input("notes/unanchored.md", [["type", "note"]]),
-        ], diagnostics).build();
-        const underfilled: GraphBuild = new GraphBuilder([
+        ], diagnostics);
+        const underfilled: TestGraphBuild = buildGraph([
             program("programs/phd.md", "phd", "work"),
-        ], diagnostics).build();
-        const healthy: GraphBuild = new GraphBuilder([], diagnostics).build();
+        ], diagnostics);
+        const healthy: TestGraphBuild = buildGraph([], diagnostics);
 
         // Require earlier snapshots to retain only their own findings.
         expect(unresolved.diagnostics).toEqual([
@@ -239,7 +250,7 @@ describe("commitment graph", () => {
 
     it("reports invalid program states while keeping programs", () => {
         // Derive one graph with explicit, missing, and invalid program states.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("programs/active.md", [
                 ["type", "program"],
                 ["id", "active-program"],
@@ -290,7 +301,7 @@ describe("commitment graph", () => {
 
     it("indexes explicit container paths and leaves implicit ones absent", () => {
         // Derive a graph with explicit area and project containers.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             area("areas/work.md", "work"),
             project("projects/alpha.md", "alpha", "work", "phd"),
             project("projects/beta.md", "beta", "work", "phd"),
@@ -310,7 +321,7 @@ describe("commitment graph", () => {
 
     it("establishes an area from an area-level support anchor", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("meetings/standup.md", [
                 ["type", "meeting"],
                 ["level", "area"],
@@ -333,7 +344,7 @@ describe("commitment graph", () => {
 
     it("treats missing and null project programs as direct", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/missing.md", "missing"),
             input("projects/null.md", [
                 ["type", "project"],
@@ -385,7 +396,7 @@ describe("commitment graph", () => {
         }
 
         // Require successful construction with the expected area snapshots.
-        const result: GraphBuild = buildGraph(testCase.inputs);
+        const result: TestGraphBuild = buildGraph(testCase.inputs);
         expect(result.graph.getAreas()).toEqual(testCase.areas);
     });
 
@@ -416,7 +427,7 @@ describe("commitment graph", () => {
 
     it("keeps the same text at different concept levels distinct", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             area("areas/shared.md", "shared"),
             project("projects/shared.md", "shared", "shared"),
         ]);
@@ -444,7 +455,7 @@ describe("commitment graph", () => {
 
     it("warns for underfilled programs and keeps them", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "phd"),
         ]);
 
@@ -467,7 +478,7 @@ describe("commitment graph", () => {
 
     it("warns for an empty program container", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([program("programs/phd.md", "phd", "work")]);
+        const result: TestGraphBuild = buildGraph([program("programs/phd.md", "phd", "work")]);
 
         expect(result.diagnostics[0]).toMatchObject({
             group: "Underfilled programs",
@@ -477,7 +488,7 @@ describe("commitment graph", () => {
 
     it("omits unresolved support anchors with diagnostics", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
             input("meetings/missing.md", [
                 ["type", "meeting"],
@@ -520,7 +531,7 @@ describe("commitment graph", () => {
 
     it("resolves supports to known areas, programs, and projects", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "phd"),
             project("projects/beta.md", "beta", "work", "phd"),
             input("meetings/area.md", [["type", "meeting"], ["level", "area"], ["anchor", "work"]]),
@@ -533,7 +544,7 @@ describe("commitment graph", () => {
 
     it("ignores non-canonical documents", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("reference/project.md", [
                 ["context", "Course"],
                 ["key", "CourseIS"],
@@ -561,7 +572,7 @@ describe("commitment graph", () => {
         ];
 
         // Derive the graph from one area and six state projects.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             area("areas/work.md", "work"),
             ...states.map(([id, state]) =>
                 project(`projects/${id}.md`, id, "work", undefined, state),
@@ -577,7 +588,7 @@ describe("commitment graph", () => {
         // Check every rejected present state against an otherwise valid project.
         for (const value of ["Active", "in-progress", "", null]) {
             // Derive the graph from the invalid state.
-            const result: GraphBuild = buildGraph([
+            const result: TestGraphBuild = buildGraph([
                 project("projects/alpha.md", "alpha", "work", undefined, value),
             ]);
 
@@ -596,7 +607,7 @@ describe("commitment graph", () => {
         }
 
         // Derive the graph from a project with no state field.
-        const missing: GraphBuild = buildGraph([
+        const missing: TestGraphBuild = buildGraph([
             input("projects/missing.md", [
                 ["type", "project"],
                 ["id", "missing"],
@@ -611,7 +622,7 @@ describe("commitment graph", () => {
 
     it("reports invalid task states while keeping missing states silent", () => {
         // Derive a graph with one invalid task and one task without a state.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", null, "active"),
             input("tasks/invalid.md", [
                 ["type", "task"],
@@ -654,7 +665,7 @@ describe("commitment graph", () => {
             ["area", "work"],
             ["state", "Active"],
         ]);
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             invalidProject,
             invalidProject,
             invalidProgram,
@@ -682,7 +693,7 @@ describe("commitment graph", () => {
 
     it("keeps coordinated project states in the area index", () => {
         // Derive the graph from two projects coordinated by one program.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             area("areas/work.md", "work"),
             project("projects/alpha.md", "alpha", "work", "phd", "done"),
             project("projects/beta.md", "beta", "work", "phd", "planned"),
@@ -709,7 +720,7 @@ describe("commitment graph", () => {
         ];
         for (const [value, expected, invalid] of values) {
             // Derive the graph from an explicit area with the test value.
-            const result: GraphBuild = buildGraph([
+            const result: TestGraphBuild = buildGraph([
                 input("areas/work.md", [
                     ["type", "area"],
                     ["id", "work"],
@@ -736,7 +747,7 @@ describe("commitment graph", () => {
         }
 
         // Derive the graph from an area container with no active field.
-        const missing: GraphBuild = buildGraph([
+        const missing: TestGraphBuild = buildGraph([
             input("areas/work.md", [["type", "area"], ["id", "work"]]),
             project("projects/alpha.md", "alpha", "work", null, "planned"),
         ]);
@@ -748,7 +759,7 @@ describe("commitment graph", () => {
 
     it("reports inactive areas that contain active projects", () => {
         // Derive a graph with active direct and coordinated projects under an inactive area.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("areas/work.md", [["type", "area"], ["id", "work"], ["active", false]]),
             project("projects/alpha.md", "alpha", "work", null, "active"),
             project("projects/beta.md", "beta", "work", null, "done"),
@@ -768,7 +779,7 @@ describe("commitment graph", () => {
 
     it("reports inactive areas that contain active programs", () => {
         // Derive an inactive area with an active program and no active projects.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("areas/work.md", [["type", "area"], ["id", "work"], ["active", false]]),
             program("programs/phd.md", "phd", "work"),
             project("projects/alpha.md", "alpha", "work", "phd", "done"),
@@ -787,7 +798,7 @@ describe("commitment graph", () => {
 
     it("reports inactive areas that contain active tasks", () => {
         // Derive an inactive area with tasks anchored to the area, a derived program, and a project.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("areas/work.md", [["type", "area"], ["id", "work"], ["active", false]]),
             project("projects/alpha.md", "alpha", "work", "phd", "planned"),
             project("projects/beta.md", "beta", "work", "phd", "planned"),
@@ -834,7 +845,7 @@ describe("commitment graph", () => {
             ["anchor", "work"],
             ["state", "active"],
         ]);
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("areas/work.md", [["type", "area"], ["id", "work"], ["active", false]]),
             task,
             task,
@@ -854,7 +865,7 @@ describe("commitment graph", () => {
         // Check both finished program states.
         for (const state of ["done", "dropped"] as const) {
             // Derive a finished program with one active and one planned project.
-            const result: GraphBuild = buildGraph([
+            const result: TestGraphBuild = buildGraph([
                 input("areas/work.md", [["type", "area"], ["id", "work"], ["active", true]]),
                 input("programs/phd.md", [
                     ["type", "program"],
@@ -879,7 +890,7 @@ describe("commitment graph", () => {
 
     it("orders inactive-area findings by area identifier", () => {
         // Derive two inactive areas whose identifiers differ from their paths.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("z/areas/zeta.md", [["type", "area"], ["id", "zeta"], ["active", false]]),
             project("z/projects/zeta-project.md", "zeta-project", "zeta", null, "active"),
             input("a/areas/alpha.md", [["type", "area"], ["id", "alpha"], ["active", false]]),
@@ -934,7 +945,7 @@ describe("commitment graph", () => {
         ];
         for (const [name, inputs] of cases) {
             // Derive the graph for the non-triggering case.
-            const result: GraphBuild = buildGraph(inputs);
+            const result: TestGraphBuild = buildGraph(inputs);
 
             // Require no inactive-area cross-field finding.
             expect(
@@ -976,7 +987,7 @@ describe("commitment graph", () => {
 
     it("accepts a zero-width no-break space inside an identifier", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/bom.md", "a\uFEFFb"),
         ]);
 
@@ -985,7 +996,7 @@ describe("commitment graph", () => {
 
     it("sorts areas, programs, and projects by code unit", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/two.md", "10"),
             project("projects/one.md", "9"),
             project("projects/p.md", "\u{1F600}", "work", "10"),
@@ -1013,7 +1024,7 @@ describe("commitment graph", () => {
 
     it("orders supplementary-character areas and programs by code unit", () => {
         // Derive the graph from the canonical inputs.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/emoji.md", "p", "\u{1F600}", "\u{1F600}"),
             project("projects/replacement.md", "q", "\uFFFD", "\uFFFD"),
             project("projects/emoji-second.md", "r", "\u{1F600}", "\u{1F600}"),
@@ -1030,7 +1041,7 @@ describe("commitment graph", () => {
 
     it("emits diagnostics in display order", () => {
         // Derive findings across several checks.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             // Add a support container with no valid anchor, handled by the unresolved rule.
             input("z/no-anchor.md", [["type", "meeting"]]),
             // Mark the area inactive while it still contains an active project.
@@ -1072,7 +1083,7 @@ describe("commitment graph", () => {
 
     it("emits every diagnostic group in display order", () => {
         // Derive one finding for every diagnostic group.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("a/unanchored.md", [["type", "note"]]),
             input("areas/invalid.md", [
                 ["type", "area"],
@@ -1137,7 +1148,7 @@ describe("commitment graph", () => {
 
     it("emits scan findings in group and source path order", () => {
         // Derive two invalid state findings and one unresolved anchor.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("z/project.md", [
                 ["type", "project"],
                 ["id", "zeta"],
@@ -1167,7 +1178,7 @@ describe("commitment graph", () => {
 
     it("orders every input phase by code-unit source path", () => {
         // Derive diagnostics from inputs whose paths sort differently by locale.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             input("z/unanchored.md", [["type", "note"]]),
             input("A/unanchored.md", [["type", "note"]]),
             input("ä/unanchored.md", [["type", "note"]]),
@@ -1183,7 +1194,7 @@ describe("commitment graph", () => {
 
     it("serializes multiple areas with fixed field and key order", () => {
         // Derive a graph with two areas, one program, and several projects.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             area("areas/home.md", "home"),
             area("areas/work.md", "work"),
             project("projects/alpha.md", "alpha", "work", "phd"),
@@ -1200,7 +1211,7 @@ describe("commitment graph", () => {
 
     it("keeps a __proto__ area key in the direct JSON projection", () => {
         // Derive a graph whose area identifier is the prototype key.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "__proto__"),
         ]);
 
@@ -1219,7 +1230,7 @@ describe("commitment graph", () => {
 
     it("keeps a __proto__ program key in the direct JSON projection", () => {
         // Derive a graph whose program identifier is the prototype key.
-        const result: GraphBuild = buildGraph([
+        const result: TestGraphBuild = buildGraph([
             project("projects/alpha.md", "alpha", "work", "__proto__"),
             project("projects/beta.md", "beta", "work", "__proto__"),
         ]);

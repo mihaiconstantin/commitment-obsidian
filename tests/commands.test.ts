@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 vi.mock("obsidian", async () => await import("./stubs/obsidian"));
 
 import { App, Modal, Notice, Setting } from "obsidian";
 import { CONFIG } from "../src/constants";
+import { Diagnostics } from "../src/diagnostics/diagnostics";
 import { SettingsReader } from "../src/settings/settings";
 import type { CommitmentSettings } from "../src/settings/settings";
 import CommitmentPlugin from "../src/main";
@@ -18,7 +19,20 @@ const project = (id: string, area: string = "work"): string =>
     `---\ntype: project\nid: ${id}\narea: ${area}\nstate: active\n---\n\nBody.\n`;
 
 
-async function createPlugin(files: Record<string, string> = { "projects/alpha.md": project("alpha") }, storedData: unknown = null): Promise<{ plugin: CommitmentPlugin; app: App; vault: FakeVault }> {
+/** Composed plugin boundaries used by command tests. */
+interface PluginSetup {
+    /** Loaded plugin under test. */
+    readonly plugin: CommitmentPlugin;
+
+    /** Stub app over the in-memory vault. */
+    readonly app: App;
+
+    /** In-memory vault records. */
+    readonly vault: FakeVault;
+}
+
+
+async function createPlugin(files: Record<string, string> = { "projects/alpha.md": project("alpha") }, storedData: unknown = null): Promise<PluginSetup> {
     // Create the in-memory vault.
     const vault: FakeVault = new FakeVault(files);
 
@@ -128,6 +142,42 @@ describe("commitment graph commands", () => {
         expect(modalTexts()[0]).not.toContain("missing");
         expect(document.body.textContent).not.toContain("Warnings");
         expect(document.body.textContent).not.toContain("meetings/missing.md");
+    });
+
+    it("collects diagnostics only for update and Doctor", async () => {
+        // Compose the plugin over a graph with one nonblocking finding.
+        const setup: PluginSetup = await createPlugin({
+            "projects/alpha.md": project("alpha"),
+            "meetings/missing.md":
+                "---\ntype: meeting\nlevel: project\nanchor: missing\nscheduled: 2026-02-26\n---\n",
+        });
+
+        // Read the composed test boundaries.
+        const plugin: CommitmentPlugin = setup.plugin;
+        const app: App = setup.app;
+
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Observe every diagnostics collection.
+        const collect: MockInstance = vi.spyOn(Diagnostics.prototype, "collect");
+
+        try {
+            // Build the graph without collecting findings for View.
+            await plugin.commands[0]?.callback?.();
+            expect(collect).not.toHaveBeenCalled();
+
+            // Collect once for the Update issue count.
+            await plugin.commands[1]?.callback?.();
+            expect(collect).toHaveBeenCalledTimes(1);
+
+            // Collect once for the Doctor modal.
+            await plugin.commands[2]?.callback?.();
+            expect(collect).toHaveBeenCalledTimes(2);
+        } finally {
+            // Restore the prototype spy after the command sequence.
+            collect.mockRestore();
+        }
     });
 
     it("registers the presentation settings tab", async () => {

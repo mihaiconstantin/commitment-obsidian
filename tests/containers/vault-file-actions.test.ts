@@ -7,7 +7,6 @@ import { CONFIG } from "../../src/constants";
 import { ContainerDocumentComposer } from "../../src/containers/container-document";
 import type { IdStyle } from "../../src/containers/file-name";
 import { VaultFileOpener } from "../../src/containers/vault-file-opener";
-import { Diagnostics } from "../../src/diagnostics/diagnostics";
 import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
 import type { CommitmentGraph } from "../../src/graph/commitment-graph";
 import type { CommitmentCreationSettings } from "../../src/settings/settings";
@@ -32,9 +31,9 @@ const project = (path: string, id: string): CanonicalInput =>
     ]);
 
 
-/** Build one graph and its diagnostics from canonical inputs. */
+/** Build one graph read model from canonical inputs. */
 function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
-    return new GraphBuilder(inputs, new Diagnostics()).build();
+    return new GraphBuilder(inputs).build();
 }
 
 

@@ -9,7 +9,7 @@ import { CONFIG } from "./constants";
 import { ContainerDocumentComposer } from "./containers/container-document";
 import { VaultContainerFileActions } from "./containers/vault-file-actions";
 import { VaultFileOpener } from "./containers/vault-file-opener";
-import { Diagnostics } from "./diagnostics/diagnostics";
+import { Diagnostics, type Diagnostic } from "./diagnostics/diagnostics";
 import { FrontmatterParser } from "./frontmatter/parser";
 import { GraphBuilder, type GraphBuild } from "./graph/builder";
 import { VaultGraphStore, type WriteOutcome } from "./graph/store";
@@ -59,13 +59,13 @@ export default class CommitmentPlugin extends Plugin {
     /** Persisted graph presentation and container creation settings. */
     public settings: CommitmentSettings = CONFIG.DEFAULT_SETTINGS;
 
-    /** Read the saved inputs and build the graph with its findings. */
+    /** Read the saved inputs and build the graph read model. */
     private async readBuild(): Promise<GraphBuild> {
         // Read every eligible saved file and parse its frontmatter.
         const inputs: readonly CanonicalInput[] = await this.store.readInputs();
 
-        // Build the graph and its nonblocking findings once.
-        return new GraphBuilder(inputs, this.diagnostics).build();
+        // Build the graph and read model without running diagnostics.
+        return new GraphBuilder(inputs).build();
     }
 
     /** Derive and display the graph without writing a vault file. */
@@ -98,11 +98,14 @@ export default class CommitmentPlugin extends Plugin {
             // Build the graph before touching the derived output.
             const build: GraphBuild = await this.readBuild();
 
+            // Collect the findings used by the update notice.
+            const findings: readonly Diagnostic[] = this.diagnostics.collect(build.normalized, build.programs);
+
             // Create, leave unchanged, or replace the derived output.
             const outcome: WriteOutcome = await this.store.writeGraph(build.graph.toJson());
 
             // Report the update and any findings that need the Doctor.
-            new Notice(this.updateNotice(outcome, build.diagnostics.length));
+            new Notice(this.updateNotice(outcome, findings.length));
         });
     }
 
@@ -110,11 +113,14 @@ export default class CommitmentPlugin extends Plugin {
     private runDoctor(): Promise<void> {
         // Run the Doctor display behind the shared command guard.
         return this.runGuarded(async (): Promise<void> => {
-            // Build the graph and read its findings from the same moment.
+            // Build the graph from the current saved inputs.
             const build: GraphBuild = await this.readBuild();
 
+            // Collect the findings from the same read model.
+            const findings: readonly Diagnostic[] = this.diagnostics.collect(build.normalized, build.programs);
+
             // Show the findings without writing a vault file.
-            this.doctorPresenter.show(build.diagnostics);
+            this.doctorPresenter.show(findings);
         });
     }
 

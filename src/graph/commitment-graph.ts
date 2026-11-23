@@ -1,8 +1,8 @@
 /**
  * Immutable commitment graph snapshot with structured access and JSON output.
  *
- * Construction and nonblocking diagnostics live in `GraphBuilder`; this class
- * owns only the finished snapshot.
+ * Construction lives in `GraphBuilder`; this class owns only the finished
+ * snapshot.
  */
 
 import type { CommitmentLevel, GraphArea } from "./types";

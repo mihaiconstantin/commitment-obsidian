@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App, Modal, Notice } from "obsidian";
-import { Diagnostics } from "../../src/diagnostics/diagnostics";
 import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
 import { CONFIG } from "../../src/constants";
 import { ContainerDocumentComposer } from "../../src/containers/container-document";
@@ -29,9 +28,9 @@ const TREE_PRESENTATION: PresentationSettings = {
 };
 
 
-/** Build one graph and its diagnostics from canonical inputs. */
+/** Build one graph read model from canonical inputs. */
 function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
-    return new GraphBuilder(inputs, new Diagnostics()).build();
+    return new GraphBuilder(inputs).build();
 }
 
 

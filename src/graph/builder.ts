@@ -3,11 +3,9 @@
  *
  * Construction normalizes every sorted input in one scan, rejects duplicate
  * containers, resolves programs from the collected references, and projects the
- * area snapshots. The injected diagnostics collaborator then inspects the
- * normalized data without blocking graph construction.
+ * area snapshots. The normalized read model stays available for later analysis.
  */
 
-import { Diagnostics, type Diagnostic } from "../diagnostics/diagnostics";
 import type { CanonicalField } from "../frontmatter/canonical-field";
 import { appendGrouped, uniqueSorted } from "../helpers/collections";
 import { compareText, isValidIdentifier } from "../helpers/strings";
@@ -73,13 +71,16 @@ interface ActiveField {
 }
 
 
-/** A graph snapshot and the findings from the same construction pass. */
+/** A graph snapshot and the read model from the same construction pass. */
 export interface GraphBuild {
     /** Immutable graph snapshot. */
     readonly graph: CommitmentGraph;
 
-    /** Nonblocking findings from the same construction pass. */
-    readonly diagnostics: readonly Diagnostic[];
+    /** Normalized local data used to build the graph. */
+    readonly normalized: NormalizedInputs;
+
+    /** Validated programs used to build the graph. */
+    readonly programs: readonly ResolvedProgram[];
 }
 
 
@@ -87,9 +88,6 @@ export interface GraphBuild {
 export class GraphBuilder {
     /** Canonical inputs copied into code-unit path order. */
     private readonly inputs: readonly CanonicalInput[];
-
-    /** Nonblocking diagnostic collaborator for each build. */
-    private readonly diagnostics: Diagnostics;
 
     /** Read one own frontmatter entry as exact text or no value. */
     private textField(input: CanonicalInput, field: CanonicalField): string | null {
@@ -640,12 +638,11 @@ export class GraphBuilder {
     }
 
     /** Sort a copy of the inputs without mutating the caller's list. */
-    public constructor(inputs: readonly CanonicalInput[], diagnostics: Diagnostics) {
+    public constructor(inputs: readonly CanonicalInput[]) {
         this.inputs = [...inputs].sort(
             (left: CanonicalInput, right: CanonicalInput): number =>
                 compareText(left.path, right.path),
         );
-        this.diagnostics = diagnostics;
     }
 
     /** Normalize, validate, and project the commitment graph. */
@@ -669,16 +666,13 @@ export class GraphBuilder {
                     this.buildArea(area, normalized.projects, programs, normalized.areas),
             );
 
-        // Collect the nonblocking findings from the resolved graph data.
-        const diagnostics: readonly Diagnostic[] = this.diagnostics.collect(normalized, programs);
-
         // Create the immutable snapshot from the graph data alone.
         const graph: CommitmentGraph = new CommitmentGraph(
             areas,
             this.containerPaths(normalized),
         );
 
-        // Return the graph and diagnostics from the same construction pass.
-        return { graph, diagnostics };
+        // Return the graph and the read model from the same construction pass.
+        return { graph, normalized, programs };
     }
 }
