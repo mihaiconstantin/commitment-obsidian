@@ -11,11 +11,14 @@ import {
     type DropdownComponent,
     type ExtraButtonComponent,
     type TextComponent,
+    type ToggleComponent,
 } from "obsidian";
 
 import { CONFIG } from "../constants";
 import { IdStyleCatalog } from "../containers/file-name";
+import { PROJECT_STATES, type ProjectState } from "../graph/project-state";
 import type { CommitmentLevel } from "../graph/types";
+import { titleCase } from "../helpers/strings";
 import type {
     AccentLevel,
     AppearanceSettings,
@@ -23,6 +26,8 @@ import type {
     ContainerCreationSettings,
     GraphSort,
     PresentationMode,
+    PresentationSettings,
+    TreeDefaultsSettings,
 } from "./settings";
 
 
@@ -34,6 +39,10 @@ export interface CommitmentSettingsHost extends Plugin {
     /** Persist a complete settings value. */
     saveSettings(next: CommitmentSettings): Promise<void>;
 }
+
+
+/** One tree state scope. */
+type TreeStateKind = "project" | "program";
 
 
 /** One editable creation field. */
@@ -109,6 +118,96 @@ export class CommitmentSettingTab extends PluginSettingTab {
         void this.host.saveSettings(next);
     }
 
+    /** Persist presentation changes with the other settings intact. */
+    private savePresentation(patch: Partial<PresentationSettings>): void {
+        // Merge the change into the latest presentation values.
+        const presentation: PresentationSettings = {
+            ...this.host.settings.presentation,
+            ...patch,
+        };
+
+        // Persist the complete settings value.
+        void this.host.saveSettings({ ...this.host.settings, presentation });
+    }
+
+    /** Persist tree default changes with the other presentation settings intact. */
+    private saveTreeDefaults(patch: Partial<TreeDefaultsSettings>): void {
+        // Merge the change into the latest tree defaults.
+        const treeDefaults: TreeDefaultsSettings = {
+            ...this.host.settings.presentation.treeDefaults,
+            ...patch,
+        };
+
+        // Persist the complete settings value.
+        void this.host.saveSettings({
+            ...this.host.settings,
+            presentation: { ...this.host.settings.presentation, treeDefaults },
+        });
+    }
+
+    /** Render the default area visibility choice. */
+    private areaDefaultsSetting(container: HTMLElement): void {
+        // Create the area default toggle.
+        new Setting(container)
+            .setName("Hide inactive areas by default")
+            .setDesc("Start each tree with areas marked inactive hidden.")
+            .addToggle((toggle: ToggleComponent): void => {
+                // Show the stored default.
+                toggle.setValue(this.host.settings.presentation.treeDefaults.hideInactiveAreas);
+
+                // Persist a changed choice.
+                toggle.onChange((value: boolean): void => {
+                    // Save the area default.
+                    this.saveTreeDefaults({ hideInactiveAreas: value });
+                });
+            });
+    }
+
+    /** Render one state's default selection toggle. */
+    private stateDefaultSetting(container: HTMLElement, kind: TreeStateKind, state: ProjectState): void {
+        // Read the selection for this scope.
+        const key: "projectStates" | "programStates" = kind === "project"
+            ? "projectStates"
+            : "programStates";
+
+        // Create the state toggle.
+        new Setting(container)
+            .setName(`${titleCase(state)} ${kind}s`)
+            .addToggle((toggle: ToggleComponent): void => {
+                // Show the stored selection.
+                toggle.setValue(this.host.settings.presentation.treeDefaults[key].includes(state));
+
+                // Persist a changed selection.
+                toggle.onChange((value: boolean): void => {
+                    // Read the latest selection before changing it.
+                    const current: readonly ProjectState[] =
+                        this.host.settings.presentation.treeDefaults[key];
+
+                    // Add or remove the edited state.
+                    const next: readonly ProjectState[] = value
+                        ? [...current, state]
+                        : current.filter((candidate: ProjectState): boolean => candidate !== state);
+
+                    // Save the updated selection.
+                    this.saveTreeDefaults({ [key]: next });
+                });
+            });
+    }
+
+    /** Render the six default state toggles for one scope. */
+    private stateDefaultsSetting(container: HTMLElement, kind: TreeStateKind): void {
+        // Explain the group before its toggles.
+        new Setting(container)
+            .setName(`Default ${kind} states`)
+            .setDesc("States checked when a tree opens. Changes in the tree are session-only.");
+
+        // Add one toggle per recognized state.
+        for (const state of PROJECT_STATES) {
+            // Render the state toggle.
+            this.stateDefaultSetting(container, kind, state);
+        }
+    }
+
     /** Read the copy for one creation field. */
     private copyFor(field: CreationField): CreationCopy {
         // Read the readable kind label.
@@ -161,13 +260,7 @@ export class CommitmentSettingTab extends PluginSettingTab {
                     // Persist only a mode defined by the shared map.
                     if (Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value)) {
                         // Save the selected mode with the order and creation settings intact.
-                        void this.host.saveSettings({
-                            ...this.host.settings,
-                            presentation: {
-                                ...this.host.settings.presentation,
-                                mode: value as PresentationMode,
-                            },
-                        });
+                        this.savePresentation({ mode: value as PresentationMode });
                     }
                 });
             });
@@ -192,13 +285,7 @@ export class CommitmentSettingTab extends PluginSettingTab {
                     // Persist only an order defined by the shared map.
                     if (Object.prototype.hasOwnProperty.call(CONFIG.GRAPH_SORTS, value)) {
                         // Save the selected order with the mode and creation settings intact.
-                        void this.host.saveSettings({
-                            ...this.host.settings,
-                            presentation: {
-                                ...this.host.settings.presentation,
-                                sort: value as GraphSort,
-                            },
-                        });
+                        this.savePresentation({ sort: value as GraphSort });
                     }
                 });
             });
@@ -315,8 +402,10 @@ export class CommitmentSettingTab extends PluginSettingTab {
         this.sortSetting(container);
         this.styleSetting(container);
 
-        // Render the accent color for every supported commitment level.
+        // Render the accent color heading.
         this.heading(container, "Appearance");
+
+        // Add a color picker for every supported commitment level.
         for (const kind of ["area", "program"] as const) {
             // Add the level's color picker and reset action.
             this.appearanceSetting(container, kind);
@@ -326,6 +415,15 @@ export class CommitmentSettingTab extends PluginSettingTab {
         for (const kind of ["area", "program", "project"] as const) {
             // Group the kind's fields under its own heading.
             this.heading(container, CONFIG.KIND_LABELS[kind]);
+
+            // Add the area default before its creation fields.
+            if (kind === "area") {
+                // Render the default area visibility choice.
+                this.areaDefaultsSetting(container);
+            } else {
+                // Render the default state toggles for this kind.
+                this.stateDefaultsSetting(container, kind);
+            }
 
             // Render the template, folder, and pattern fields.
             this.creationSetting(container, { kind, field: "templatePath" });

@@ -43,7 +43,11 @@ describe("commitment settings", () => {
 
         // Require the nested values unchanged.
         expect(settings).toEqual({
-            presentation: { mode: "tree", sort: "count" },
+            presentation: {
+                mode: "tree",
+                sort: "count",
+                treeDefaults: CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults,
+            },
             appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
@@ -275,12 +279,65 @@ describe("commitment settings", () => {
         });
     });
 
+    it("loads tree defaults and normalizes each state selection", () => {
+        // Read the shipped defaults when the field is absent.
+        const defaults = CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults;
+        expect(reader.read(null).presentation.treeDefaults).toEqual(defaults);
+        expect(reader.read({
+            presentation: { mode: "tree", sort: "name" },
+        }).presentation.treeDefaults).toEqual(defaults);
+
+        // Keep a valid subset in canonical order and an explicit empty selection.
+        const custom: CommitmentSettings = reader.read({
+            presentation: {
+                treeDefaults: {
+                    projectStates: ["done", "active", "done", "unknown"],
+                    programStates: [],
+                    hideInactiveAreas: true,
+                },
+            },
+        });
+        expect(custom.presentation.treeDefaults).toEqual({
+            projectStates: ["active", "done"],
+            programStates: [],
+            hideInactiveAreas: true,
+        });
+
+        // Normalize each malformed field independently.
+        const malformed: CommitmentSettings = reader.read({
+            presentation: {
+                treeDefaults: {
+                    projectStates: ["bogus"],
+                    programStates: "active",
+                    hideInactiveAreas: "yes",
+                },
+            },
+        });
+        expect(malformed.presentation.treeDefaults).toEqual(defaults);
+
+        // Keep one valid field when another field is missing.
+        const partial: CommitmentSettings = reader.read({
+            presentation: {
+                treeDefaults: { projectStates: ["paused"] },
+            },
+        });
+        expect(partial.presentation.treeDefaults).toEqual({
+            projectStates: ["paused"],
+            programStates: defaults.programStates,
+            hideInactiveAreas: false,
+        });
+    });
+
     it("ignores unsupported nested presentation values", () => {
         // Require the supported mode and order to load unchanged.
         const stored: CommitmentSettings = reader.read({
             presentation: { mode: "tree", sort: "count" },
         });
-        expect(stored.presentation).toEqual({ mode: "tree", sort: "count" });
+        expect(stored.presentation).toEqual({
+            mode: "tree",
+            sort: "count",
+            treeDefaults: CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults,
+        });
 
         // Require unknown and malformed nested modes to fall back to JSON.
         expect(reader.read({ presentation: { mode: "xml" } }).presentation.mode).toBe("json");

@@ -159,6 +159,205 @@ export class Notice {
 }
 
 
+/** One menu item recorded by the test stub. */
+export class MenuItem {
+    /** Visible item title. */
+    title = "";
+
+    /** Checked state for checkable items. */
+    checked: boolean | null = null;
+
+    /** Whether the item is disabled. */
+    disabled = false;
+
+    /** Whether the item is a warning. */
+    warning = false;
+
+    /** Whether the item is a label. */
+    label = false;
+
+    /** Item section identifier. */
+    section = "";
+
+    /** Registered click handler. */
+    clickHandler: ((evt: MouseEvent | KeyboardEvent) => unknown) | null = null;
+
+    /** Set the item title. */
+    setTitle(title: string | DocumentFragment): this {
+        // Store the text form used by tests.
+        this.title = typeof title === "string" ? title : title.textContent ?? "";
+        return this;
+    }
+
+    /** Set the item icon. */
+    setIcon(_icon: string | null): this {
+        // Keep the same item.
+        return this;
+    }
+
+    /** Set the checked state. */
+    setChecked(checked: boolean | null): this {
+        // Store the checked state for assertions.
+        this.checked = checked;
+        return this;
+    }
+
+    /** Set the disabled state. */
+    setDisabled(disabled: boolean): this {
+        // Store the disabled state.
+        this.disabled = disabled;
+        return this;
+    }
+
+    /** Set the warning state. */
+    setWarning(isWarning: boolean): this {
+        // Store the warning state.
+        this.warning = isWarning;
+        return this;
+    }
+
+    /** Set the label state. */
+    setIsLabel(isLabel: boolean): this {
+        // Store the label state.
+        this.label = isLabel;
+        return this;
+    }
+
+    /** Set the item section. */
+    setSection(section: string): this {
+        // Store the section for assertions.
+        this.section = section;
+        return this;
+    }
+
+    /** Register the click handler. */
+    onClick(callback: (evt: MouseEvent | KeyboardEvent) => unknown): this {
+        // Store the handler for the test click helper.
+        this.clickHandler = callback;
+        return this;
+    }
+
+    /** Invoke the registered click handler. */
+    click(evt: MouseEvent | KeyboardEvent = new MouseEvent("click")): void {
+        // Run the handler when one is registered.
+        this.clickHandler?.(evt);
+    }
+}
+
+
+/** Native menu stub that records items and visibility. */
+export class Menu {
+    static instances: Menu[] = [];
+
+    /** Items added to the menu in order. */
+    items: MenuItem[] = [];
+
+    /** Whether the menu is hidden. */
+    hidden = false;
+
+    /** Registered hide handler. */
+    hideHandler: (() => unknown) | null = null;
+
+    constructor() {
+        Menu.instances.push(this);
+    }
+
+    /** Disable the icon column. */
+    setNoIcon(): this {
+        // Keep the same menu.
+        return this;
+    }
+
+    /** Force native or DOM rendering. */
+    setUseNativeMenu(_useNativeMenu: boolean): this {
+        // Keep the same menu.
+        return this;
+    }
+
+    /** Add one item and configure it. */
+    addItem(callback: (item: MenuItem) => unknown): this {
+        // Build and record the item.
+        const item: MenuItem = new MenuItem();
+        this.items.push(item);
+        callback(item);
+        return this;
+    }
+
+    /** Add a separator. */
+    addSeparator(): this {
+        // Keep the same menu.
+        return this;
+    }
+
+    /** Set the parent element. */
+    setParentElement(_element: HTMLElement): this {
+        // Keep the same menu.
+        return this;
+    }
+
+    /** Show the menu at a mouse event. */
+    showAtMouseEvent(_event: MouseEvent): this {
+        // Mark the menu visible.
+        this.hidden = false;
+        return this;
+    }
+
+    /** Show the menu at a position. */
+    showAtPosition(_position: MenuPositionDef, _doc?: Document): this {
+        // Mark the menu visible.
+        this.hidden = false;
+        return this;
+    }
+
+    /** Handle a history back action. */
+    onHistoryBack(): void {
+        // Close the menu through the normal path.
+        this.hide();
+    }
+
+    /** Hide the menu and notify the registered handler. */
+    hide(): this {
+        // Mark the menu hidden.
+        this.hidden = true;
+        this.hideHandler?.();
+        return this;
+    }
+
+    /** Hide the menu through the deprecated alias. */
+    close(): void {
+        this.hide();
+    }
+
+    /** Register the hide handler. */
+    onHide(callback: () => unknown): void {
+        // Store the handler for assertions.
+        this.hideHandler = callback;
+    }
+
+    /** Build a menu for one event. */
+    static forEvent(_event: PointerEvent | MouseEvent): Menu {
+        // Return a fresh menu.
+        return new Menu();
+    }
+}
+
+
+/** Menu position used by the stub. */
+export interface MenuPositionDef {
+    /** Horizontal position. */
+    x: number;
+
+    /** Vertical position. */
+    y: number;
+
+    /** Optional width. */
+    width?: number;
+
+    /** Optional overlap flag. */
+    overlap?: boolean;
+}
+
+
 function createElement(tag: string): HTMLElement {
     return document.createElement(tag);
 }
@@ -341,6 +540,30 @@ export class ExtraButtonComponent {
 }
 
 
+/** Toggle control used by the settings stub. */
+export class ToggleComponent {
+    /** Current control value. */
+    value = false;
+
+    /** Registered change handler. */
+    change: ((value: boolean) => void) | null = null;
+
+    /** Set the current value without firing the handler. */
+    setValue(value: boolean): ToggleComponent {
+        // Store the toggle value.
+        this.value = value;
+        return this;
+    }
+
+    /** Register the change handler. */
+    onChange(handler: (value: boolean) => void): ToggleComponent {
+        // Store the handler for the setting stub.
+        this.change = handler;
+        return this;
+    }
+}
+
+
 export class Setting {
     static instances: Setting[] = [];
 
@@ -351,6 +574,7 @@ export class Setting {
     value = "";
     change: ((value: string) => void) | null = null;
     color: ColorComponent | null = null;
+    toggle: ToggleComponent | null = null;
     reset: (() => void) | null = null;
     heading = false;
 
@@ -421,6 +645,22 @@ export class Setting {
             ? null
             : (value: string): void => {
                 this.value = value;
+                handler(value);
+            };
+        return this;
+    }
+
+    addToggle(build: (toggle: ToggleComponent) => void): this {
+        // Build the toggle control and retain its value and handler.
+        const control: ToggleComponent = new ToggleComponent();
+        build(control);
+        this.toggle = control;
+        this.value = control.value ? "true" : "false";
+        const handler: ((value: boolean) => void) | null = control.change;
+        control.change = handler === null
+            ? null
+            : (value: boolean): void => {
+                this.value = value ? "true" : "false";
                 handler(value);
             };
         return this;

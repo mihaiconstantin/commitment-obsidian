@@ -9,19 +9,12 @@
 import { Notice, setIcon, type App } from "obsidian";
 
 import { CONFIG } from "../constants";
-import { VaultFileOpener, type VaultFileOpenResult } from "../containers/vault-file-opener";
-import type { Diagnostic, DiagnosticCode } from "../graph/types";
+import type { VaultFileOpener, VaultFileOpenResult } from "../containers/vault-file-opener";
+import type { Diagnostic } from "../diagnostics/diagnostics";
 import { uniqueSorted } from "../helpers/collections";
 import { countLabel } from "../helpers/strings";
 import { describeFailure } from "../helpers/utils";
 import { CommitmentModal } from "./commitment-modal";
-
-
-/** Readable group labels for every diagnostic code. */
-const GROUP_LABELS: Readonly<Record<DiagnosticCode, string>> = {
-    unresolved_anchor: "Unresolved anchors",
-    underfilled_program: "Underfilled programs",
-};
 
 
 /** Modal showing the nonblocking findings from one graph build. */
@@ -35,11 +28,11 @@ export class DoctorModal extends CommitmentModal {
     /** Shared policy for resolving and opening a source path. */
     private readonly opener: VaultFileOpener;
 
-    /** Keep the base modal from focusing its first input when opened. */
-    public hasInitialInputFocus: boolean = false;
-
     /** Whether one source file is already opening. */
     private opening = false;
+
+    /** Keep the base modal from focusing its first input when opened. */
+    public hasInitialInputFocus: boolean = false;
 
     /** Render the summary and the grouped findings. */
     private renderDiagnostics(content: HTMLElement): void {
@@ -62,16 +55,18 @@ export class DoctorModal extends CommitmentModal {
             cls: "cd-list commitment-modal__scroll",
         });
 
-        // Group findings by their stable code in first-appearance order.
-        const groups: Map<DiagnosticCode, Diagnostic[]> = new Map<DiagnosticCode, Diagnostic[]>();
+        // Group findings by their display heading in first-appearance order.
+        const groups: Map<string, Diagnostic[]> = new Map<string, Diagnostic[]>();
+
+        // Visit every finding.
         for (const diagnostic of this.diagnostics) {
             // Read the existing group.
-            const entries: Diagnostic[] | undefined = groups.get(diagnostic.code);
+            const entries: Diagnostic[] | undefined = groups.get(diagnostic.group);
 
             // Start a group on its first finding.
             if (entries === undefined) {
-                // Record the first finding under its code.
-                groups.set(diagnostic.code, [diagnostic]);
+                // Record the first finding under its heading.
+                groups.set(diagnostic.group, [diagnostic]);
                 continue;
             }
 
@@ -80,12 +75,12 @@ export class DoctorModal extends CommitmentModal {
         }
 
         // Render every group and its cards.
-        for (const [code, entries] of groups) {
+        for (const [group, entries] of groups) {
             // Add the group heading and its count.
             const section: HTMLElement = list.createEl("section", { cls: "cd-group" });
             const heading: HTMLElement = section.createEl("h3", { cls: "cd-group__title" });
             heading.append(
-                document.createTextNode(GROUP_LABELS[code]),
+                document.createTextNode(group),
                 document.createTextNode(" "),
             );
             heading.createEl("span", {
@@ -118,6 +113,8 @@ export class DoctorModal extends CommitmentModal {
                     text: paths.length === 1 ? "Source" : "Sources",
                 });
                 const actions: HTMLElement = pathRow.createDiv({ cls: "cd-paths__actions" });
+
+                // Add one file action per source path.
                 for (const path of paths) {
                     // Add one file action for the path.
                     actions.append(this.pathButton(path));
@@ -169,9 +166,13 @@ export class DoctorModal extends CommitmentModal {
 
         // Acquire the single in-flight guard.
         this.opening = true;
+
+        // Open the path while the guard is held.
         try {
             // Resolve and open the source through the shared policy.
             const result: VaultFileOpenResult = await this.opener.open(path);
+
+            // Reject a source path that no longer exists.
             if (result === "missing") {
                 // Report the vanished source and keep the modal open.
                 new Notice(`Cannot open \`${path}\`, file is missing.`);
@@ -197,14 +198,12 @@ export class DoctorModal extends CommitmentModal {
     }
 
     /** Construct the modal without touching the DOM. */
-    public constructor(app: App, diagnostics: readonly Diagnostic[], released: (() => void) | null = null) {
+    public constructor(app: App, diagnostics: readonly Diagnostic[], opener: VaultFileOpener, released: (() => void) | null = null) {
         // Initialize the Obsidian modal and retain its inputs.
         super(app);
         this.diagnostics = diagnostics;
         this.released = released;
-
-        // Create the shared opener for source paths.
-        this.opener = new VaultFileOpener(app);
+        this.opener = opener;
     }
 
     /** Build the modal body when Obsidian opens it. */

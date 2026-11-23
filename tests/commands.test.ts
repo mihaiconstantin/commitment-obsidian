@@ -1,23 +1,38 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 vi.mock("obsidian", async () => await import("./stubs/obsidian"));
 
 import { App, Modal, Notice, Setting } from "obsidian";
 import { CONFIG } from "../src/constants";
+import { Diagnostics } from "../src/diagnostics/diagnostics";
 import { SettingsReader } from "../src/settings/settings";
 import type { CommitmentSettings } from "../src/settings/settings";
 import CommitmentPlugin from "../src/main";
 import { FakeVault } from "./support/fake-vault";
 
 
+/** Shipped tree defaults used by settings expectations. */
+const TREE_DEFAULTS = CONFIG.DEFAULT_SETTINGS.presentation.treeDefaults;
+
+
 const project = (id: string, area: string = "work"): string =>
     `---\ntype: project\nid: ${id}\narea: ${area}\nstate: active\n---\n\nBody.\n`;
 
 
-async function createPlugin(
-    files: Record<string, string> = { "projects/alpha.md": project("alpha") },
-    storedData: unknown = null,
-): Promise<{ plugin: CommitmentPlugin; app: App; vault: FakeVault }> {
+/** Composed plugin boundaries used by command tests. */
+interface PluginSetup {
+    /** Loaded plugin under test. */
+    readonly plugin: CommitmentPlugin;
+
+    /** Stub app over the in-memory vault. */
+    readonly app: App;
+
+    /** In-memory vault records. */
+    readonly vault: FakeVault;
+}
+
+
+async function createPlugin(files: Record<string, string> = { "projects/alpha.md": project("alpha") }, storedData: unknown = null): Promise<PluginSetup> {
     // Create the in-memory vault.
     const vault: FakeVault = new FakeVault(files);
 
@@ -129,6 +144,42 @@ describe("commitment graph commands", () => {
         expect(document.body.textContent).not.toContain("meetings/missing.md");
     });
 
+    it("collects diagnostics only for update and Doctor", async () => {
+        // Compose the plugin over a graph with one nonblocking finding.
+        const setup: PluginSetup = await createPlugin({
+            "projects/alpha.md": project("alpha"),
+            "meetings/missing.md":
+                "---\ntype: meeting\nlevel: project\nanchor: missing\nscheduled: 2026-02-26\n---\n",
+        });
+
+        // Read the composed test boundaries.
+        const plugin: CommitmentPlugin = setup.plugin;
+        const app: App = setup.app;
+
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Observe every diagnostics collection.
+        const collect: MockInstance = vi.spyOn(Diagnostics.prototype, "collect");
+
+        try {
+            // Build the graph without collecting findings for View.
+            await plugin.commands[0]?.callback?.();
+            expect(collect).not.toHaveBeenCalled();
+
+            // Collect once for the Update issue count.
+            await plugin.commands[1]?.callback?.();
+            expect(collect).toHaveBeenCalledTimes(1);
+
+            // Collect once for the Doctor modal.
+            await plugin.commands[2]?.callback?.();
+            expect(collect).toHaveBeenCalledTimes(2);
+        } finally {
+            // Restore the prototype spy after the command sequence.
+            collect.mockRestore();
+        }
+    });
+
     it("registers the presentation settings tab", async () => {
         // Compose the plugin over an in-memory vault.
         const { plugin } = await createPlugin();
@@ -214,13 +265,108 @@ describe("commitment graph commands", () => {
         await Promise.resolve();
         expect(plugin.data).toEqual({
             ...CONFIG.DEFAULT_SETTINGS,
-            presentation: { mode: "json", sort: "count" },
+            presentation: { mode: "json", sort: "count", treeDefaults: TREE_DEFAULTS },
         });
 
         // Change the order and require the stored mode to survive.
         byName("Graph order")?.change?.("name");
         await Promise.resolve();
         expect(plugin.data).toEqual(CONFIG.DEFAULT_SETTINGS);
+    });
+
+    it("persists tree defaults with consecutive changes", async () => {
+        // Compose the plugin and render its settings tab.
+        const { plugin } = await createPlugin();
+        plugin.settingTabs[0]?.display();
+
+        // Read the controls by their visible names.
+        const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
+        const byName = (name: string): Setting | undefined =>
+            controls.find((setting) => setting.nameEl.textContent === name);
+
+        // Hide active programs and require only that selection to change.
+        byName("Active programs")?.toggle?.change?.(false);
+        await Promise.resolve();
+        expect((plugin.data as CommitmentSettings).presentation.treeDefaults).toEqual({
+            ...TREE_DEFAULTS,
+            programStates: TREE_DEFAULTS.programStates.filter(
+                (state): boolean => state !== "active",
+            ),
+        });
+
+        // Hide done projects without re-rendering and require both changes.
+        byName("Done projects")?.toggle?.change?.(false);
+        await Promise.resolve();
+        expect((plugin.data as CommitmentSettings).presentation.treeDefaults).toEqual({
+            ...TREE_DEFAULTS,
+            programStates: TREE_DEFAULTS.programStates.filter(
+                (state): boolean => state !== "active",
+            ),
+            projectStates: TREE_DEFAULTS.projectStates.filter(
+                (state): boolean => state !== "done",
+            ),
+        });
+
+        // Check the area default and require every earlier change to survive.
+        byName("Hide inactive areas by default")?.toggle?.change?.(true);
+        await Promise.resolve();
+        expect((plugin.data as CommitmentSettings).presentation.treeDefaults).toEqual({
+            ...TREE_DEFAULTS,
+            programStates: TREE_DEFAULTS.programStates.filter(
+                (state): boolean => state !== "active",
+            ),
+            projectStates: TREE_DEFAULTS.projectStates.filter(
+                (state): boolean => state !== "done",
+            ),
+            hideInactiveAreas: true,
+        });
+    });
+
+    it("reapplies tree defaults without persisting tree changes", async () => {
+        // Compose the plugin over restrictive tree defaults.
+        const treeDefaults = {
+            ...TREE_DEFAULTS,
+            projectStates: ["active"] as const,
+            programStates: ["active"] as const,
+            hideInactiveAreas: true,
+        };
+        const { plugin, app } = await createPlugin(undefined, {
+            presentation: { mode: "tree", sort: "name", treeDefaults },
+        });
+        app.workspace.triggerLayoutReady();
+
+        // Open the tree and require the configured defaults.
+        await plugin.commands[0]?.callback?.();
+        const first: HTMLElement = document.querySelector(
+            ".commitment-graph__tree-host",
+        ) as HTMLElement;
+        const firstArea: HTMLInputElement = first.querySelector(
+            "input[data-cg-scope='area']",
+        ) as HTMLInputElement;
+        expect(firstArea.checked).toBe(true);
+        expect(first.querySelector(
+            ".cg-states-button[data-cg-state-scope='project']",
+        )?.textContent).toBe("Project States: 1/6");
+        expect(first.querySelector(
+            ".cg-states-button[data-cg-state-scope='program']",
+        )?.textContent).toBe("Program States: 1/6");
+
+        // Change a tree control and require the stored settings to stay intact.
+        firstArea.checked = false;
+        firstArea.dispatchEvent(new Event("change", { bubbles: true }));
+        expect((plugin.data as CommitmentSettings).presentation.treeDefaults).toEqual(treeDefaults);
+
+        // Reopen the tree and require the configured defaults again.
+        await plugin.commands[0]?.callback?.();
+        const second: HTMLElement = document.querySelector(
+            ".commitment-graph__tree-host",
+        ) as HTMLElement;
+        expect((second.querySelector("input[data-cg-scope='area']") as HTMLInputElement).checked).toBe(
+            true,
+        );
+        expect(second.querySelector(
+            ".cg-states-button[data-cg-state-scope='project']",
+        )?.textContent).toBe("Project States: 1/6");
     });
 
     it("persists an accent color and resets it to the default", async () => {
@@ -275,7 +421,7 @@ describe("commitment graph commands", () => {
             Setting.instances.filter((setting) => setting.heading).map((setting) => setting.nameEl.textContent),
         ).toEqual(["General", "Appearance", "Area", "Program", "Project"]);
 
-        // Require the accent colors, then the style and creation fields.
+        // Require the accent colors, then the defaults, style, and creation fields.
         const controls: Setting[] = Setting.instances.filter((setting) => !setting.heading);
         expect(controls.map((setting) => setting.value)).toEqual([
             "tree",
@@ -283,24 +429,41 @@ describe("commitment graph commands", () => {
             "none",
             CONFIG.DEFAULT_SETTINGS.appearance.area,
             CONFIG.DEFAULT_SETTINGS.appearance.program,
+            "false",
             "",
             "",
             "Area - {{id}}",
             "",
+            "true",
+            "true",
+            "true",
+            "true",
+            "true",
+            "true",
+            "",
             "",
             "Program - {{id}}",
+            "",
+            "true",
+            "true",
+            "true",
+            "true",
+            "true",
+            "true",
             "Templates/project.md",
             "Projects",
             "Project - {{id}}",
         ]);
 
         // Change the project folder through its text control.
-        controls[12]?.change?.("Commitments/Projects");
+        controls.find((setting) => setting.nameEl.textContent === "Project folder")?.change?.(
+            "Commitments/Projects",
+        );
         await Promise.resolve();
 
         // Require the complete normalized settings shape with the edited folder.
         expect(plugin.data).toEqual({
-            presentation: { mode: "tree", sort: "name" },
+            presentation: { mode: "tree", sort: "name", treeDefaults: TREE_DEFAULTS },
             appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
@@ -322,11 +485,11 @@ describe("commitment graph commands", () => {
         // Persist the tree presentation and count order through the plugin surface.
         await plugin.saveSettings({
             ...CONFIG.DEFAULT_SETTINGS,
-            presentation: { mode: "tree", sort: "count" },
+            presentation: { mode: "tree", sort: "count", treeDefaults: TREE_DEFAULTS },
         });
         expect(plugin.data).toEqual({
             ...CONFIG.DEFAULT_SETTINGS,
-            presentation: { mode: "tree", sort: "count" },
+            presentation: { mode: "tree", sort: "count", treeDefaults: TREE_DEFAULTS },
         });
 
         // Persist JSON again and confirm the last write wins.
@@ -340,7 +503,7 @@ describe("commitment graph commands", () => {
 
         // Persist unsafe and padded creation values.
         const next: CommitmentSettings = {
-            presentation: { mode: "tree", sort: "count" },
+            presentation: { mode: "tree", sort: "count", treeDefaults: TREE_DEFAULTS },
             appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
@@ -361,7 +524,7 @@ describe("commitment graph commands", () => {
 
         // Require the normalized shape, with the default patterns filled in.
         expect(plugin.data).toEqual({
-            presentation: { mode: "tree", sort: "count" },
+            presentation: { mode: "tree", sort: "count", treeDefaults: TREE_DEFAULTS },
             appearance: CONFIG.DEFAULT_SETTINGS.appearance,
             creation: {
                 idStyle: "none",
@@ -556,6 +719,27 @@ describe("commitment graph commands", () => {
         // Require the Doctor to write nothing.
         expect(vault.calls.creates).toEqual([]);
         expect(vault.calls.processes).toEqual([]);
+    });
+
+    it("opens the Doctor for an inactive area with active projects", async () => {
+        // Compose the plugin over an inactive area and an active project.
+        const { plugin, app } = await createPlugin({
+            "areas/work.md": "---\ntype: area\nid: work\nactive: false\n---\n",
+            "projects/alpha.md": project("alpha"),
+        });
+        // Mark the workspace layout ready.
+        app.workspace.triggerLayoutReady();
+
+        // Invoke the Doctor command.
+        await plugin.commands[2]?.callback?.();
+
+        // Require the cross-field finding instead of the healthy state.
+        expect(Modal.instances).toHaveLength(1);
+        expect(document.body.textContent).toContain("Inactive areas with active projects");
+        expect(document.body.textContent).toContain(
+            "Inactive area `work` contains 1 active project `alpha`.",
+        );
+        expect(document.body.textContent).not.toContain("No issues found.");
     });
 
     it("opens the Doctor in the healthy state", async () => {

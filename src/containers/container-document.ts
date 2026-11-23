@@ -60,11 +60,7 @@ export class ContainerDocumentComposer {
     }
 
     /** Substitute the supported placeholders across the whole template. */
-    private substitutePlaceholders(
-        text: string,
-        identity: ContainerIdentity,
-        format: MomentFormatter,
-    ): string {
+    private substitutePlaceholders(text: string, identity: ContainerIdentity, format: MomentFormatter): string {
         // Replace title and the two formatter placeholders, leaving other braces alone.
         return text.replace(
             /{{title}}|{{(date|time)(?::([^{}]*))?}}/g,
@@ -208,11 +204,7 @@ export class ContainerDocumentComposer {
     }
 
     /** Compose one container document from template text and its identity. */
-    public compose(
-        templateText: string,
-        identity: ContainerIdentity,
-        format: MomentFormatter,
-    ): string {
+    public compose(templateText: string, identity: ContainerIdentity, format: MomentFormatter): string {
         // Reject an identity the graph would not accept before writing anything.
         this.validateIdentity(identity);
 

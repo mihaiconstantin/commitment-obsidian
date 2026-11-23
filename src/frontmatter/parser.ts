@@ -21,11 +21,8 @@ export class FrontmatterParser {
     }
 
     /** Parse one YAML document into a canonical frontmatter mapping. */
-    private parseMappedDocument(
-        path: string,
-        yamlText: string,
-    ): ReadonlyMap<string, unknown> {
-        // Parse the document with the reviewed structural options.
+    private parseMappedDocument(path: string, yamlText: string): ReadonlyMap<string, unknown> {
+        // Parse with strict YAML 1.2, unique keys, merge keys, and silent logging.
         const document: Document = parseDocument(yamlText, {
             version: "1.2",
             strict: true,
@@ -43,6 +40,8 @@ export class FrontmatterParser {
 
         // Convert to own mapping entries in a prototype-safe Map.
         let values: unknown;
+
+        // Convert the parsed document with the default alias limit.
         try {
             // Convert the parsed document with the default alias limit.
             values = document.toJS({ mapAsMap: true });
@@ -68,6 +67,8 @@ export class FrontmatterParser {
 
         // Retain text keys only; other key shapes cannot name canonical fields.
         const mapping: Map<string, unknown> = new Map<string, unknown>();
+
+        // Visit every mapping entry.
         for (const [key, value] of values) {
             // Skip a key that is not exact text, as canonical recognition ignores it.
             if (typeof key !== "string") {
@@ -112,7 +113,7 @@ export class FrontmatterParser {
         // Read the YAML text between the documented content offsets.
         const yamlText: string = text.slice(info.from, info.to);
 
-        // Parse the single frontmatter document with the reviewed settings.
+        // Parse the single frontmatter document through the shared mapping parser.
         return this.parseMappedDocument(path, yamlText);
     }
 }

@@ -21,11 +21,7 @@ declare global {
     }
 }
 
-HTMLElement.prototype.createEl = function createEl(
-    this: HTMLElement,
-    tag: string,
-    info: DomElementInfo = {},
-): HTMLElement {
+HTMLElement.prototype.createEl = function createEl(this: HTMLElement, tag: string, info: DomElementInfo = {}): HTMLElement {
     // Create the requested element.
     const element: HTMLElement = document.createElement(tag);
 
@@ -51,10 +47,7 @@ HTMLElement.prototype.createEl = function createEl(
     return element;
 };
 
-HTMLElement.prototype.createDiv = function createDiv(
-    this: HTMLElement,
-    info: DomElementInfo = {},
-): HTMLDivElement {
+HTMLElement.prototype.createDiv = function createDiv(this: HTMLElement, info: DomElementInfo = {}): HTMLDivElement {
     return this.createEl("div", info) as HTMLDivElement;
 };
 

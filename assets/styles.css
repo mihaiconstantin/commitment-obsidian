@@ -127,6 +127,36 @@
     transform: translateY(1px);
 }
 
+/* Wrap the state menus and the area checkbox on narrow screens. */
+.commitment-graph__tree-host .cg-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 8px 0 0;
+    font-size: 11.5px;
+    color: var(--cg-fg);
+}
+
+.commitment-graph__tree-host .cg-states {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.commitment-graph__tree-host .cg-states-button {
+    white-space: nowrap;
+}
+
+.commitment-graph__tree-host .cg-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
 .commitment-graph__tree-host .cg-stats {
     font-size: 11px;
     line-height: 1.45;

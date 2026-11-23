@@ -27,6 +27,8 @@ export class VaultFileOpener {
     public async open(path: string): Promise<VaultFileOpenResult> {
         // Resolve the path without assuming that it is a file.
         const entry: TAbstractFile | null = this.app.vault.getAbstractFileByPath(path);
+
+        // Reject a path that no longer exists.
         if (entry === null) {
             // Report a path that no longer exists.
             return "missing";

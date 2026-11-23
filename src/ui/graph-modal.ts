@@ -10,14 +10,12 @@ import { Notice, type App } from "obsidian";
 
 import { CONFIG } from "../constants";
 import type { ContainerFileActions } from "../containers/container-file-actions";
-import { VaultContainerFileActions } from "../containers/vault-file-actions";
 import type { CommitmentGraph } from "../graph/commitment-graph";
 import type { GraphArea } from "../graph/types";
 import { orderAreas } from "../helpers/area-order";
 import { describeFailure } from "../helpers/utils";
 import type {
     AppearanceSettings,
-    CommitmentCreationSettings,
     PresentationSettings,
 } from "../settings/settings";
 import { GraphTree } from "./graph-tree";
@@ -35,8 +33,8 @@ export class GraphModal extends CommitmentModal {
     /** Accent colors used by the tree. */
     private readonly appearance: AppearanceSettings;
 
-    /** Supplier for the creation settings used by tree file actions. */
-    private readonly creation: () => CommitmentCreationSettings;
+    /** File actions composed for this graph, or none for JSON presentation. */
+    private readonly actions: ContainerFileActions | null;
 
     /** Called after the modal released its content, or null when unused. */
     private readonly released: (() => void) | null;
@@ -51,16 +49,11 @@ export class GraphModal extends CommitmentModal {
             cls: "commitment-graph__tree-host commitment-modal__body",
         });
 
-        // Build the vault adapter for this graph and the current settings.
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            this.app,
-            this.graph,
-            (kind) => this.creation()[kind],
-            () => this.creation().idStyle,
-        );
+        // Use the file actions composed for this graph.
+        const adapter: ContainerFileActions | null = this.actions;
 
         // Wrap the adapter so success closes the modal and failure reports once.
-        const actions: ContainerFileActions = {
+        const actions: ContainerFileActions | null = adapter === null ? null : {
             actionFor: (identity) => adapter.actionFor(identity),
             activate: async (identity): Promise<void> => {
                 try {
@@ -83,6 +76,7 @@ export class GraphModal extends CommitmentModal {
             this.presentation.sort,
             actions,
             this.appearance,
+            this.presentation.treeDefaults,
         );
 
         // Bind "/" to the search field through the modal keymap.
@@ -102,20 +96,13 @@ export class GraphModal extends CommitmentModal {
     }
 
     /** Construct the modal without touching the DOM. */
-    public constructor(
-        app: App,
-        graph: CommitmentGraph,
-        presentation: PresentationSettings,
-        appearance: AppearanceSettings,
-        creation: () => CommitmentCreationSettings,
-        released: (() => void) | null = null,
-    ) {
+    public constructor(app: App, graph: CommitmentGraph, presentation: PresentationSettings, appearance: AppearanceSettings, actions: ContainerFileActions | null, released: (() => void) | null = null) {
         // Initialize the Obsidian modal and retain its inputs.
         super(app);
         this.graph = graph;
         this.presentation = presentation;
         this.appearance = appearance;
-        this.creation = creation;
+        this.actions = actions;
         this.released = released;
     }
 
