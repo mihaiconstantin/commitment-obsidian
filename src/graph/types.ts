@@ -5,6 +5,8 @@
  * the presenter own the behavior that produces and consumes them.
  */
 
+import type { ProjectState } from "./project-state";
+
 
 /** Canonical container kinds recognized by the graph. */
 export type CommitmentKind = "area" | "program" | "project" | "meeting" | "note" | "task" | "board";
@@ -30,43 +32,35 @@ export interface ContainerIdentity {
 }
 
 
-/** Stable codes for nonblocking graph findings. */
-export type DiagnosticCode = "unresolved_anchor" | "underfilled_program";
-
-
-/** One nonblocking finding about the graph inputs. */
-export interface Diagnostic {
-    /** Stable category code for the finding. */
-    readonly code: DiagnosticCode;
-
-    /** Readable message naming the affected identifiers. */
-    readonly message: string;
-
-    /** Root-relative vault paths related to the finding. */
-    readonly paths: readonly string[];
-}
-
-
-/** One program and its coordinated project identifiers. */
+/** One program with its state and coordinated project identifiers. */
 export interface GraphProgram {
     /** Exact program identifier text. */
     readonly id: string;
+
+    /** Recognized program state, or null when absent or invalid. */
+    readonly state: ProjectState | null;
 
     /** Sorted project identifiers coordinated by the program. */
     readonly projects: readonly string[];
 }
 
 
-/** One area with its direct projects and programs. */
+/** One area with its direct projects, programs, relevance, and project states. */
 export interface GraphArea {
     /** Exact area identifier text. */
     readonly id: string;
+
+    /** Explicit area relevance, or null when no valid area container declares it. */
+    readonly active: boolean | null;
 
     /** Sorted identifiers of projects not coordinated by a program. */
     readonly projects: readonly string[];
 
     /** Programs under the area in identifier order. */
     readonly programs: readonly GraphProgram[];
+
+    /** Recognized project states in this area, keyed by project identifier. */
+    readonly projectStates: ReadonlyMap<string, ProjectState>;
 }
 
 
