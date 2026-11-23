@@ -12,7 +12,7 @@ import {
 } from "obsidian";
 
 import { CONFIG } from "../constants";
-import { FrontmatterParser } from "../frontmatter/parser";
+import type { FrontmatterParser } from "../frontmatter/parser";
 import { compareText } from "../helpers/strings";
 import { describeFailure } from "../helpers/utils";
 import type { CanonicalInput } from "./types";
@@ -109,13 +109,13 @@ export class VaultGraphStore {
         return new Error(`Cannot ${action} \`${CONFIG.GRAPH_PATH}\`, ${detail}`);
     }
 
-    /** Construct the store for one vault. */
-    public constructor(vault: Vault) {
+    /** Construct the store for one vault and parser. */
+    public constructor(vault: Vault, parser: FrontmatterParser) {
         // Store the vault used for all access.
         this.vault = vault;
 
-        // Create the parser for saved file frontmatter.
-        this.parser = new FrontmatterParser();
+        // Store the parser for saved file frontmatter.
+        this.parser = parser;
     }
 
     /** Read every eligible saved file and parse its canonical inputs. */

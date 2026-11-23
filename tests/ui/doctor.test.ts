@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
-import { App, Modal, Notice, WorkspaceLeaf } from "obsidian";
+import { App, Modal, Notice } from "obsidian";
+import { VaultFileOpener } from "../../src/containers/vault-file-opener";
 import { CONFIG } from "../../src/constants";
-import { createDiagnostic } from "../../src/helpers/diagnostics";
 import { ModalDoctorPresenter } from "../../src/ui/modal-doctor-presenter";
 import { FakeVault } from "../support/fake-vault";
 
@@ -43,7 +43,7 @@ describe("Doctor presenter", () => {
     it("shows the healthy state without findings", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([]);
 
@@ -62,19 +62,19 @@ describe("Doctor presenter", () => {
     it("groups findings and lists every source path", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic(
-                "unresolved_anchor",
-                "Support container has no valid `level` or `anchor`. Omitted from graph.",
-                ["notes/unanchored.md"],
-            ),
-            createDiagnostic(
-                "underfilled_program",
-                "Program `phd` in area `work` has 1 project. 2 or more expected.",
-                ["programs/phd.md", "projects/alpha.md"],
-            ),
+            {
+                group: "Unresolved anchors",
+                message: "Support container has no valid `level` or `anchor`. Omitted from graph.",
+                paths: ["notes/unanchored.md"],
+            },
+            {
+                group: "Underfilled programs",
+                message: "Program `phd` in area `work` has 1 project. 2 or more expected.",
+                paths: ["programs/phd.md", "projects/alpha.md"],
+            },
         ]);
 
         // Require the issue and file totals.
@@ -112,14 +112,14 @@ describe("Doctor presenter", () => {
     it("counts unique files and orders paths deterministically", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic(
-                "unresolved_anchor",
-                "Support container has a repeated path.",
-                ["b.md", "a.md", "b.md"],
-            ),
+            {
+                group: "Unresolved anchors",
+                message: "Support container has a repeated path.",
+                paths: ["b.md", "a.md", "b.md"],
+            },
         ]);
 
         // Require the deduplicated file total and ordered actions.
@@ -136,10 +136,14 @@ describe("Doctor presenter", () => {
     it("uses the singular issue and file nouns", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic("unresolved_anchor", "One issue.", ["a.md", "b.md"]),
+            {
+                group: "Unresolved anchors",
+                message: "One issue.",
+                paths: ["a.md", "b.md"],
+            },
         ]);
 
         expect(document.querySelector(".cd-summary")?.textContent).toBe(
@@ -148,8 +152,16 @@ describe("Doctor presenter", () => {
 
         // Render multiple findings in one file from the same presenter.
         presenter.show([
-            createDiagnostic("unresolved_anchor", "First.", ["a.md"]),
-            createDiagnostic("unresolved_anchor", "Second.", ["a.md"]),
+            {
+                group: "Unresolved anchors",
+                message: "First.",
+                paths: ["a.md"],
+            },
+            {
+                group: "Unresolved anchors",
+                message: "Second.",
+                paths: ["a.md"],
+            },
         ]);
 
         expect(document.querySelector(".cd-summary")?.textContent).toBe(
@@ -160,28 +172,36 @@ describe("Doctor presenter", () => {
     it("reports findings without paths without a file count", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
-        presenter.show([createDiagnostic("unresolved_anchor", "No path.", [])]);
+        presenter.show([{
+            group: "Unresolved anchors",
+            message: "No path.",
+            paths: [],
+        }]);
 
         expect(document.querySelector(".cd-summary")?.textContent).toBe("1 issue.");
         expect(document.querySelector(".cd-path")).toBeNull();
     });
 
-    it("renders messages and paths as text only", () => {
+    it("renders headings, messages, and paths as text only", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic(
-                "unresolved_anchor",
-                "Support <b>markup</b> stays text.",
-                ["<img src=x>.md"],
-            ),
+            {
+                group: "<em>Unresolved anchors</em>",
+                message: "Support <b>markup</b> stays text.",
+                paths: ["<img src=x>.md"],
+            },
         ]);
 
         // Require no injected elements.
+        expect(document.querySelector("em")).toBeNull();
+        expect(document.querySelector(".cd-group__title")?.textContent).toBe(
+            "<em>Unresolved anchors</em> 1",
+        );
         expect(document.querySelector("b")).toBeNull();
         expect(document.querySelector("img")).toBeNull();
         expect(document.body.textContent).toContain("Support <b>markup</b> stays text.");
@@ -194,14 +214,14 @@ describe("Doctor presenter", () => {
         // Create an in-memory vault with the diagnostic source.
         const vault: FakeVault = new FakeVault({ "notes/unanchored.md": "# Note\n" });
         const app: App = new App(vault);
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic(
-                "unresolved_anchor",
-                "Support container has no valid `level` or `anchor`.",
-                ["notes/unanchored.md"],
-            ),
+            {
+                group: "Unresolved anchors",
+                message: "Support container has no valid `level` or `anchor`.",
+                paths: ["notes/unanchored.md"],
+            },
         ]);
         const modal: Modal = currentModal();
 
@@ -222,10 +242,14 @@ describe("Doctor presenter", () => {
     it("reports a missing source and keeps the modal open", async () => {
         // Create an empty vault and the presenter.
         const app: App = new App(new FakeVault());
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic("unresolved_anchor", "Missing source.", ["notes/missing.md"]),
+            {
+                group: "Unresolved anchors",
+                message: "Missing source.",
+                paths: ["notes/missing.md"],
+            },
         ]);
         const modal: Modal = currentModal();
 
@@ -248,10 +272,14 @@ describe("Doctor presenter", () => {
         // Create a vault whose path is a folder.
         const vault: FakeVault = new FakeVault({ "notes/child.md": "# Child\n" });
         const app: App = new App(vault);
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         presenter.show([
-            createDiagnostic("unresolved_anchor", "Folder source.", ["notes"]),
+            {
+                group: "Unresolved anchors",
+                message: "Folder source.",
+                paths: ["notes"],
+            },
         ]);
         const modal: Modal = currentModal();
 
@@ -277,20 +305,21 @@ describe("Doctor presenter", () => {
             "notes/second.md": "# Second\n",
         });
         const app: App = new App(vault);
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const opener: VaultFileOpener = new VaultFileOpener(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, opener);
 
         presenter.show([
-            createDiagnostic(
-                "unresolved_anchor",
-                "Open failure.",
-                ["notes/first.md", "notes/second.md"],
-            ),
+            {
+                group: "Unresolved anchors",
+                message: "Open failure.",
+                paths: ["notes/first.md", "notes/second.md"],
+            },
         ]);
         const modal: Modal = currentModal();
 
         // Let every open fail after the guard is acquired.
         const open: MockInstance = vi
-            .spyOn(WorkspaceLeaf.prototype, "openFile")
+            .spyOn(opener, "open")
             .mockRejectedValue(new Error("locked"));
 
         // Activate the first source.
@@ -325,17 +354,22 @@ describe("Doctor presenter", () => {
         // Create an in-memory vault with the diagnostic source.
         const vault: FakeVault = new FakeVault({ "notes/unanchored.md": "# Note\n" });
         const app: App = new App(vault);
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const opener: VaultFileOpener = new VaultFileOpener(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, opener);
 
         presenter.show([
-            createDiagnostic("unresolved_anchor", "Pending source.", ["notes/unanchored.md"]),
+            {
+                group: "Unresolved anchors",
+                message: "Pending source.",
+                paths: ["notes/unanchored.md"],
+            },
         ]);
         const modal: Modal = currentModal();
 
         // Let the open settle after the synchronous double activation.
         const open: MockInstance = vi
-            .spyOn(WorkspaceLeaf.prototype, "openFile")
-            .mockResolvedValue();
+            .spyOn(opener, "open")
+            .mockResolvedValue("opened");
 
         // Activate the path twice before the first open settles.
         const button: HTMLButtonElement = document.querySelector(".cd-path") as HTMLButtonElement;
@@ -353,12 +387,20 @@ describe("Doctor presenter", () => {
     it("keeps one Doctor modal open at a time", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
         // Present findings twice.
-        presenter.show([createDiagnostic("unresolved_anchor", "First.", [])]);
+        presenter.show([{
+            group: "Unresolved anchors",
+            message: "First.",
+            paths: [],
+        }]);
         const first: Modal = currentModal();
-        presenter.show([createDiagnostic("unresolved_anchor", "Second.", [])]);
+        presenter.show([{
+            group: "Unresolved anchors",
+            message: "Second.",
+            paths: [],
+        }]);
         const second: Modal = currentModal();
 
         // Require the older modal to close and the newer one to stay open.
@@ -369,9 +411,13 @@ describe("Doctor presenter", () => {
     it("releases the rendered content when the modal closes", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app);
+        const presenter: ModalDoctorPresenter = new ModalDoctorPresenter(app, new VaultFileOpener(app));
 
-        presenter.show([createDiagnostic("unresolved_anchor", "Rendered.", [])]);
+        presenter.show([{
+            group: "Unresolved anchors",
+            message: "Rendered.",
+            paths: [],
+        }]);
         const modal: Modal = currentModal();
         expect(modal.contentEl.querySelector(".cd-list")).not.toBeNull();
 

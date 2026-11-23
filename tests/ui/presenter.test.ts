@@ -5,8 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App, Modal, Notice } from "obsidian";
+import { Diagnostics } from "../../src/diagnostics/diagnostics";
 import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
 import { CONFIG } from "../../src/constants";
+import { ContainerDocumentComposer } from "../../src/containers/container-document";
+import { VaultContainerFileActions } from "../../src/containers/vault-file-actions";
+import { VaultFileOpener } from "../../src/containers/vault-file-opener";
 import { ModalGraphPresenter } from "../../src/ui/modal-presenter";
 import type { CanonicalInput } from "../../src/graph/types";
 import type { PresentationSettings } from "../../src/settings/settings";
@@ -19,14 +23,11 @@ const TREE_PRESENTATION: PresentationSettings = { mode: "tree", sort: "name" };
 
 /** Build one graph and its diagnostics from canonical inputs. */
 function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
-    return new GraphBuilder(inputs).build();
+    return new GraphBuilder(inputs, new Diagnostics()).build();
 }
 
 
-function input(
-    path: string,
-    entries: ReadonlyArray<readonly [string, unknown]>,
-): CanonicalInput {
+function input(path: string, entries: ReadonlyArray<readonly [string, unknown]>): CanonicalInput {
     return { path, frontmatter: new Map<string, unknown>(entries) };
 }
 
@@ -64,11 +65,11 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive the graph from the canonical inputs.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, JSON_PRESENTATION);
+        presenter.show(result.graph, JSON_PRESENTATION, null);
 
         const block: Element | null = document.querySelector("pre.commitment-graph__json");
         expect(block?.textContent).toBe(
@@ -80,7 +81,7 @@ describe("text graph presenter", () => {
     it("does not render diagnostics in the graph modal", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with an unresolved support anchor.
         const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
@@ -93,13 +94,13 @@ describe("text graph presenter", () => {
         ]);
 
         // Require the JSON presentation to omit the finding.
-        presenter.show(result.graph, JSON_PRESENTATION);
+        presenter.show(result.graph, JSON_PRESENTATION, null);
         expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
         expect(document.body.textContent).not.toContain("Warnings");
         expect(document.body.textContent).not.toContain("meetings/missing.md");
 
         // Require the tree presentation to omit the finding too.
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
         expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
         expect(document.body.textContent).not.toContain("Warnings");
         expect(document.body.textContent).not.toContain("meetings/missing.md");
@@ -108,7 +109,7 @@ describe("text graph presenter", () => {
     it("orders JSON and tree areas by the stored graph sort", () => {
         // Create the stub app and presenter.
         const app: App = new App();
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph whose name and count orders differ.
         const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
@@ -118,21 +119,21 @@ describe("text graph presenter", () => {
         ]);
 
         // Require name order in the JSON presentation.
-        presenter.show(result.graph, { mode: "json", sort: "name" });
+        presenter.show(result.graph, { ...JSON_PRESENTATION, sort: "name" }, null);
         const nameJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
         expect(nameJson.indexOf('"home"')).toBeLessThan(nameJson.indexOf('"work"'));
 
         // Require count order in the JSON presentation.
-        presenter.show(result.graph, { mode: "json", sort: "count" });
+        presenter.show(result.graph, { ...JSON_PRESENTATION, sort: "count" }, null);
         const countJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
         expect(countJson.indexOf('"work"')).toBeLessThan(countJson.indexOf('"home"'));
 
         // Require name order in the tree presentation.
-        presenter.show(result.graph, { mode: "tree", sort: "name" });
+        presenter.show(result.graph, { ...TREE_PRESENTATION, sort: "name" }, null);
         expect(areaNames()).toEqual(["home", "work"]);
 
         // Require count order in the tree presentation.
-        presenter.show(result.graph, { mode: "tree", sort: "count" });
+        presenter.show(result.graph, { ...TREE_PRESENTATION, sort: "count" }, null);
         expect(areaNames()).toEqual(["work", "home"]);
     });
 
@@ -140,7 +141,7 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         Modal.instances = [];
         // Derive the graph from the canonical inputs.
         const result: GraphBuild = buildGraph([
@@ -152,7 +153,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, JSON_PRESENTATION);
+        presenter.show(result.graph, JSON_PRESENTATION, null);
 
         expect(Modal.instances).toHaveLength(1);
         expect(Modal.instances[0]?.titleEl.textContent).toBe("Commitment Graph");
@@ -167,12 +168,12 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with one area.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Open the tree presentation.
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
 
         // Require the modal to leave focus alone on open.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -183,7 +184,7 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with a program and a direct project.
         const result: GraphBuild = buildGraph([
             project("projects/alpha.md", "alpha"),
@@ -208,7 +209,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
 
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.modalEl.classList.contains("commitment-modal")).toBe(true);
@@ -230,14 +231,10 @@ describe("text graph presenter", () => {
     it("applies supplied accent colors to the tree", () => {
         // Create the stub app and a presenter with appearance overrides.
         const app: App = new App();
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(
-            app,
-            () => CONFIG.DEFAULT_SETTINGS.creation,
-            () => ({ area: "#112233", program: "#445566" }),
-        );
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => ({ area: "#112233", program: "#445566" }));
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
 
         // Require every supplied color on the mounted tree host.
         const host: HTMLElement = document.querySelector(".commitment-graph__tree-host") as HTMLElement;
@@ -249,7 +246,7 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with an identifier that looks like markup.
         const result: GraphBuild = buildGraph([
             input("projects/x.md", [
@@ -260,7 +257,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
 
         expect(document.querySelector("img")).toBeNull();
         expect(document.querySelector("b")).toBeNull();
@@ -272,11 +269,11 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive the empty graph.
         const result: GraphBuild = buildGraph([]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
 
         expect(document.querySelector(".cg-empty")?.textContent).toContain("No areas");
         expect(document.querySelector(".cg-node")).toBeNull();
@@ -316,11 +313,11 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with one area.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
 
         // Require the keymap registration.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -341,9 +338,9 @@ describe("text graph presenter", () => {
     it("releases the rendered tree when the modal closes", () => {
         // Create the stub app and present one tree.
         const app: App = new App();
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.contentEl.querySelector(".cg-list")).not.toBeNull();
 
@@ -357,14 +354,14 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with one area.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Present the graph twice in a row.
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
         const first: Modal = Modal.instances[0] as Modal;
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(result.graph, TREE_PRESENTATION, null);
         const second: Modal = Modal.instances[1] as Modal;
 
         // Require the older modal to close and the newer one to stay open.
@@ -379,7 +376,7 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive a graph with an explicit area and an implicit program.
         const result: GraphBuild = buildGraph([
             input("areas/work.md", [
@@ -402,7 +399,17 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(
+            result.graph,
+            TREE_PRESENTATION,
+            new VaultContainerFileActions(
+                app,
+                result.graph,
+                () => CONFIG.DEFAULT_SETTINGS.creation,
+                new ContainerDocumentComposer(),
+                new VaultFileOpener(app),
+            ),
+        );
 
         // Require one icon per area, program, and project row.
         const labels: readonly string[] = Array.from(
@@ -419,11 +426,21 @@ describe("text graph presenter", () => {
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive the graph with one explicit project.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(
+            result.graph,
+            TREE_PRESENTATION,
+            new VaultContainerFileActions(
+                app,
+                result.graph,
+                () => CONFIG.DEFAULT_SETTINGS.creation,
+                new ContainerDocumentComposer(),
+                new VaultFileOpener(app),
+            ),
+        );
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the project sticky-note icon.
@@ -446,11 +463,21 @@ describe("text graph presenter", () => {
         });
         const app: App = new App(vault);
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive the graph with one explicit project under an implicit area.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, TREE_PRESENTATION);
+        presenter.show(
+            result.graph,
+            TREE_PRESENTATION,
+            new VaultContainerFileActions(
+                app,
+                result.graph,
+                () => CONFIG.DEFAULT_SETTINGS.creation,
+                new ContainerDocumentComposer(),
+                new VaultFileOpener(app),
+            ),
+        );
         const modal: Modal = Modal.instances[0] as Modal;
 
         // Click the implicit area plus.
@@ -469,11 +496,11 @@ describe("text graph presenter", () => {
         // Create the stub app.
         const app: App = new App();
         // Compose the presenter over the app.
-        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => CONFIG.DEFAULT_SETTINGS.creation);
+        const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         // Derive the graph with one explicit project.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, JSON_PRESENTATION);
+        presenter.show(result.graph, JSON_PRESENTATION, null);
 
         expect(document.querySelector(".cg-file")).toBeNull();
     });

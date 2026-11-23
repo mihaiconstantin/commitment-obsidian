@@ -4,19 +4,20 @@ vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { App } from "obsidian";
 import { CONFIG } from "../../src/constants";
+import { ContainerDocumentComposer } from "../../src/containers/container-document";
+import type { IdStyle } from "../../src/containers/file-name";
+import { VaultFileOpener } from "../../src/containers/vault-file-opener";
+import { Diagnostics } from "../../src/diagnostics/diagnostics";
 import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
 import type { CommitmentGraph } from "../../src/graph/commitment-graph";
-import type { ContainerCreationSettings } from "../../src/settings/settings";
+import type { CommitmentCreationSettings } from "../../src/settings/settings";
 import type { CanonicalInput, ContainerIdentity } from "../../src/graph/types";
 import { VaultContainerFileActions } from "../../src/containers/vault-file-actions";
 import { FakeVault } from "../support/fake-vault";
 
 
 /** Build one canonical input from frontmatter entries. */
-function input(
-    path: string,
-    entries: ReadonlyArray<readonly [string, unknown]>,
-): CanonicalInput {
+function input(path: string, entries: ReadonlyArray<readonly [string, unknown]>): CanonicalInput {
     return { path, frontmatter: new Map<string, unknown>(entries) };
 }
 
@@ -33,22 +34,22 @@ const project = (path: string, id: string): CanonicalInput =>
 
 /** Build one graph and its diagnostics from canonical inputs. */
 function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
-    return new GraphBuilder(inputs).build();
+    return new GraphBuilder(inputs, new Diagnostics()).build();
 }
 
 
 /** Return creation settings with the shipped pattern defaults. */
-function creation(
-    templatePath: string = "",
-    folderPath: string = "",
-    pattern: string = CONFIG.DEFAULT_PATTERNS.project,
-): ContainerCreationSettings {
-    return { templatePath, folderPath, pattern };
+function creation(templatePath: string = "", folderPath: string = "", pattern: string = CONFIG.DEFAULT_PATTERNS.project, idStyle: IdStyle = CONFIG.DEFAULT_ID_STYLE): CommitmentCreationSettings {
+    return {
+        ...CONFIG.DEFAULT_SETTINGS.creation,
+        idStyle,
+        project: { templatePath, folderPath, pattern },
+    };
 }
 
 
 /** Return an empty creation settings value. */
-const EMPTY: ContainerCreationSettings = creation();
+const EMPTY: CommitmentCreationSettings = creation();
 
 
 /** Return the failure message from one rejected action. */
@@ -101,11 +102,8 @@ describe("vault container file actions", () => {
                 ["program", "phd"],
             ]),
         ]).graph;
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            new App(new FakeVault()),
-            graph,
-            () => EMPTY,
-        );
+        const app: App = new App(new FakeVault());
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         // Require every explicit row to open.
         expect(adapter.actionFor({ kind: "area", id: "work", area: "work", program: null })).toBe("open");
@@ -121,7 +119,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault({ "projects/alpha.md": "# Alpha\n" });
         const app: App = new App(vault);
         const graph: CommitmentGraph = buildGraph([project("projects/alpha.md", "alpha")]).graph;
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY);
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         await adapter.activate(identity("alpha"));
 
@@ -138,11 +136,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault({ "Templates/project.md": template });
         const app: App = new App(vault);
         const graph: CommitmentGraph = buildGraph([]).graph;
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            graph,
-            () => creation("Templates/project.md", "Commitments/Projects"),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => creation("Templates/project.md", "Commitments/Projects"), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         await adapter.activate(identity("ghost"));
 
@@ -166,17 +160,16 @@ describe("vault container file actions", () => {
         expect(app.workspace.opened.map((file) => file.path)).toEqual([target]);
     });
 
-    it("creates the file at the configured pattern and style", async () => {
-        // Compose the adapter over a custom pattern and title case.
+    it("reads the current pattern and style when activation starts", async () => {
+        // Compose the adapter before the creation settings change.
         const vault: FakeVault = new FakeVault({});
         const app: App = new App(vault);
         const graph: CommitmentGraph = buildGraph([]).graph;
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            graph,
-            () => creation("", "Projects", "{{id}}"),
-            () => "titleCase",
-        );
+        let settings: CommitmentCreationSettings = creation();
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => settings, new ContainerDocumentComposer(), new VaultFileOpener(app));
+
+        // Replace the settings without recreating the adapter.
+        settings = creation("", "Projects", "{{id}}", "titleCase");
 
         await adapter.activate(identity("some-long-id"));
 
@@ -195,7 +188,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault({ "Project - ghost.md": "# Existing\n" });
         const app: App = new App(vault);
         const graph: CommitmentGraph = buildGraph([]).graph;
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY);
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -210,11 +203,7 @@ describe("vault container file actions", () => {
         // Build an empty vault with a configured missing template.
         const vault: FakeVault = new FakeVault();
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => creation("Templates/missing.md", "Projects"),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => creation("Templates/missing.md", "Projects"), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -229,11 +218,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault({ "Templates/project.md": "# Template\n" });
         vi.spyOn(vault, "read").mockRejectedValueOnce(new Error("denied"));
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => creation("Templates/project.md", "Projects"),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => creation("Templates/project.md", "Projects"), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -248,11 +233,7 @@ describe("vault container file actions", () => {
         // Occupy the parent folder path with a file.
         const vault: FakeVault = new FakeVault({ Commitments: "not a folder" });
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => creation("", "Commitments"),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => creation("", "Commitments"), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -270,7 +251,7 @@ describe("vault container file actions", () => {
 
         // Remove the file between the build and the action.
         vault.remove("projects/alpha.md");
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY);
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("alpha")));
 
@@ -290,7 +271,7 @@ describe("vault container file actions", () => {
         // Replace the file with a folder between the build and the action.
         vault.remove("projects/alpha.md");
         await vault.createFolder("projects/alpha.md");
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY);
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("alpha")));
 
@@ -306,11 +287,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault();
         await vault.createFolder("Templates/folder.md");
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => creation("Templates/folder.md", "Projects"),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => creation("Templates/folder.md", "Projects"), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -326,11 +303,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault();
         vi.spyOn(vault, "createFolder").mockRejectedValue(new Error("denied"));
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => creation("", "Created/Projects"),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => creation("", "Created/Projects"), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -345,11 +318,7 @@ describe("vault container file actions", () => {
         const vault: FakeVault = new FakeVault();
         vi.spyOn(vault, "create").mockRejectedValue(new Error("permission denied"));
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => creation("", ""),
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => creation("", ""), new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(adapter.activate(identity("ghost")));
 
@@ -364,11 +333,7 @@ describe("vault container file actions", () => {
         // Use an identifier that canonical validation cannot represent.
         const vault: FakeVault = new FakeVault();
         const app: App = new App(vault);
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            app,
-            buildGraph([]).graph,
-            () => EMPTY,
-        );
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(
             adapter.activate({ kind: "project", id: "alpha ", area: "work", program: null }),
@@ -384,11 +349,8 @@ describe("vault container file actions", () => {
     it("aborts when the identifier sanitizes to an empty file name", async () => {
         // Build an empty adapter.
         const vault: FakeVault = new FakeVault();
-        const adapter: VaultContainerFileActions = new VaultContainerFileActions(
-            new App(vault),
-            buildGraph([]).graph,
-            () => EMPTY,
-        );
+        const app: App = new App(vault);
+        const adapter: VaultContainerFileActions = new VaultContainerFileActions(app, buildGraph([]).graph, () => EMPTY, new ContainerDocumentComposer(), new VaultFileOpener(app));
 
         const message: string = await failureOf(
             adapter.activate({ kind: "project", id: "...", area: "work", program: null }),

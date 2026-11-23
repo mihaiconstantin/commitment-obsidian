@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 
 import { CONFIG } from "../../src/constants";
+import { FrontmatterParser } from "../../src/frontmatter/parser";
 import { VaultGraphStore } from "../../src/graph/store";
 import type { CanonicalInput } from "../../src/graph/types";
 import { FakeVault } from "../support/fake-vault";
@@ -20,7 +21,7 @@ describe("vault graph store", () => {
             "nested/other.md": "Other.\n",
         });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         // Read the saved inputs.
         const inputs: readonly CanonicalInput[] = await store.readInputs();
@@ -43,7 +44,7 @@ describe("vault graph store", () => {
             ".hidden/inside.md": "Hidden.\n",
         });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         // Read the saved inputs.
         const inputs: readonly CanonicalInput[] = await store.readInputs();
@@ -61,7 +62,7 @@ describe("vault graph store", () => {
             "notes/plain.md": "Plain body.\n",
         });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         // Read the saved inputs.
         const inputs: readonly CanonicalInput[] = await store.readInputs();
@@ -82,7 +83,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault({ "broken.md": "Body.\n" });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
         // Replace the vault behavior for the case.
         vi.spyOn(vault, "read").mockRejectedValueOnce(new Error("disk failure"));
 
@@ -95,7 +96,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault();
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         await expect(store.writeGraph("{}\n")).resolves.toBe("written");
         expect(vault.calls.creates).toEqual([CONFIG.GRAPH_PATH]);
@@ -106,7 +107,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: "{}\n" });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         await expect(store.writeGraph("{}\n")).resolves.toBe("unchanged");
         expect(vault.calls.processes).toEqual([]);
@@ -117,7 +118,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: '{"manual": true}\n' });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         await expect(store.writeGraph("{}\n")).resolves.toBe("written");
         expect(vault.calls.processes).toEqual([CONFIG.GRAPH_PATH]);
@@ -129,7 +130,7 @@ describe("vault graph store", () => {
         const vault: FakeVault = new FakeVault();
         vault.createFolder(CONFIG.GRAPH_PATH);
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
 
         await expect(store.writeGraph("{}\n")).rejects.toThrowError(
             /`commitment-graph\.json` is a folder/,
@@ -140,7 +141,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault();
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
         // Replace the vault behavior for the case.
         vi.spyOn(vault, "create").mockRejectedValueOnce(new Error("disk full"));
 
@@ -153,7 +154,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: "{}\n" });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
         // Replace the vault behavior for the case.
         vi.spyOn(vault, "read").mockRejectedValueOnce(new Error("locked"));
 
@@ -166,7 +167,7 @@ describe("vault graph store", () => {
         // Create the in-memory vault.
         const vault: FakeVault = new FakeVault({ [CONFIG.GRAPH_PATH]: '{"manual": true}\n' });
         // Compose the store over the vault.
-        const store: VaultGraphStore = new VaultGraphStore(vault);
+        const store: VaultGraphStore = new VaultGraphStore(vault, new FrontmatterParser());
         // Replace the vault behavior for the case.
         vi.spyOn(vault, "process").mockRejectedValueOnce(new Error("read only"));
 
