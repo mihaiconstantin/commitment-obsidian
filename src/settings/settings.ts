@@ -104,18 +104,12 @@ export class SettingsReader {
     /** Supported identifier styles used to gate the persisted value. */
     private readonly styles: IdStyleCatalog = new IdStyleCatalog();
 
-    /** Return whether a value is a supported presentation mode. */
-    private isPresentationMode(value: unknown): value is PresentationMode {
-        // Require exact text that names an own supported mode.
-        return typeof value === "string"
-            && Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value);
-    }
-
-    /** Return whether a value is a supported graph sort. */
-    private isGraphSort(value: unknown): value is GraphSort {
-        // Require exact text that names an own supported sort.
-        return typeof value === "string"
-            && Object.prototype.hasOwnProperty.call(CONFIG.GRAPH_SORTS, value);
+    /** Read one supported choice, falling back on an unknown or malformed value. */
+    private readChoice<T extends string>(value: unknown, options: Readonly<Record<T, string>>, fallback: T): T {
+        // Require exact text that names an own supported choice.
+        return typeof value === "string" && Object.prototype.hasOwnProperty.call(options, value)
+            ? value as T
+            : fallback;
     }
 
     /** Return a vault-relative setting path, or empty when it is unsafe. */
@@ -283,12 +277,16 @@ export class SettingsReader {
         const storedSort: unknown = ownValue(presentation, "sort");
 
         // Fall back on the configured defaults for malformed presentation values.
-        const mode: PresentationMode = this.isPresentationMode(storedMode)
-            ? storedMode
-            : CONFIG.DEFAULT_SETTINGS.presentation.mode;
-        const sort: GraphSort = this.isGraphSort(storedSort)
-            ? storedSort
-            : CONFIG.DEFAULT_SETTINGS.presentation.sort;
+        const mode: PresentationMode = this.readChoice(
+            storedMode,
+            CONFIG.PRESENTATION_MODES,
+            CONFIG.DEFAULT_SETTINGS.presentation.mode,
+        );
+        const sort: GraphSort = this.readChoice(
+            storedSort,
+            CONFIG.GRAPH_SORTS,
+            CONFIG.DEFAULT_SETTINGS.presentation.sort,
+        );
 
         // Read the default tree filters without trusting their shape.
         const treeDefaults: TreeDefaultsSettings = this.readTreeDefaults(
