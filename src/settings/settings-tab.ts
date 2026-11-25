@@ -21,9 +21,7 @@ import type { CommitmentLevel } from "../graph/types";
 import { titleCase } from "../helpers/strings";
 import type {
     AccentLevel,
-    AppearanceSettings,
     CommitmentSettings,
-    ContainerCreationSettings,
     GraphSort,
     PresentationMode,
     PresentationSettings,
@@ -82,6 +80,12 @@ export class CommitmentSettingTab extends PluginSettingTab {
         program: "Color for program names and glyphs.",
     };
 
+    /** Persist one settings change against the latest values. */
+    private commit(change: (current: CommitmentSettings) => CommitmentSettings): void {
+        // Save the complete value derived from the latest settings.
+        void this.host.saveSettings(change(this.host.settings));
+    }
+
     /** Render one group heading using the setting widget Obsidian provides. */
     private heading(container: HTMLElement, text: string): void {
         // Use the heading form of a setting, which exists at the minimum app version.
@@ -91,57 +95,38 @@ export class CommitmentSettingTab extends PluginSettingTab {
     /** Persist one accent color change with the other settings intact. */
     private saveAppearance(kind: AccentLevel, value: string): void {
         // Replace only the edited commitment level.
-        const appearance: AppearanceSettings = {
-            ...this.host.settings.appearance,
-            [kind]: value,
-        };
-
-        // Persist the complete settings value.
-        void this.host.saveSettings({ ...this.host.settings, appearance });
+        this.commit((current: CommitmentSettings): CommitmentSettings => ({
+            ...current,
+            appearance: { ...current.appearance, [kind]: value },
+        }));
     }
 
     /** Persist one creation field change with the other settings intact. */
     private saveCreation(field: CreationField, value: string): void {
-        // Read the current creation values.
-        const creation: ContainerCreationSettings = this.host.settings.creation[field.kind];
-
         // Replace only the edited field.
-        const next: CommitmentSettings = {
-            ...this.host.settings,
+        this.commit((current: CommitmentSettings): CommitmentSettings => ({
+            ...current,
             creation: {
-                ...this.host.settings.creation,
-                [field.kind]: { ...creation, [field.field]: value },
+                ...current.creation,
+                [field.kind]: { ...current.creation[field.kind], [field.field]: value },
             },
-        };
-
-        // Persist the complete normalized value.
-        void this.host.saveSettings(next);
+        }));
     }
 
     /** Persist presentation changes with the other settings intact. */
     private savePresentation(patch: Partial<PresentationSettings>): void {
         // Merge the change into the latest presentation values.
-        const presentation: PresentationSettings = {
-            ...this.host.settings.presentation,
-            ...patch,
-        };
-
-        // Persist the complete settings value.
-        void this.host.saveSettings({ ...this.host.settings, presentation });
+        this.commit((current: CommitmentSettings): CommitmentSettings => ({
+            ...current,
+            presentation: { ...current.presentation, ...patch },
+        }));
     }
 
     /** Persist tree default changes with the other presentation settings intact. */
     private saveTreeDefaults(patch: Partial<TreeDefaultsSettings>): void {
         // Merge the change into the latest tree defaults.
-        const treeDefaults: TreeDefaultsSettings = {
-            ...this.host.settings.presentation.treeDefaults,
-            ...patch,
-        };
-
-        // Persist the complete settings value.
-        void this.host.saveSettings({
-            ...this.host.settings,
-            presentation: { ...this.host.settings.presentation, treeDefaults },
+        this.savePresentation({
+            treeDefaults: { ...this.host.settings.presentation.treeDefaults, ...patch },
         });
     }
 
@@ -348,10 +333,10 @@ export class CommitmentSettingTab extends PluginSettingTab {
                     // Persist only a supported style.
                     if (this.styles.isStyle(value)) {
                         // Save the style with every other setting intact.
-                        void this.host.saveSettings({
-                            ...this.host.settings,
-                            creation: { ...this.host.settings.creation, idStyle: value },
-                        });
+                        this.commit((current: CommitmentSettings): CommitmentSettings => ({
+                            ...current,
+                            creation: { ...current.creation, idStyle: value },
+                        }));
                     }
                 });
             });
