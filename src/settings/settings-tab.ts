@@ -130,22 +130,47 @@ export class CommitmentSettingTab extends PluginSettingTab {
         });
     }
 
-    /** Render the default area visibility choice. */
-    private areaDefaultsSetting(container: HTMLElement): void {
-        // Create the area default toggle.
+    /** Render one dropdown choice backed by an exact option map. */
+    private choiceSetting<T extends string>(container: HTMLElement, name: string, description: string, options: Readonly<Record<T, string>>, current: T, save: (value: T) => void): void {
+        // Create the setting with one dropdown.
         new Setting(container)
-            .setName("Hide inactive areas by default")
-            .setDesc("Start each tree with areas marked inactive hidden.")
-            .addToggle((toggle: ToggleComponent): void => {
-                // Show the stored default.
-                toggle.setValue(this.host.settings.presentation.treeDefaults.hideInactiveAreas);
+            .setName(name)
+            .setDesc(description)
+            .addDropdown((dropdown: DropdownComponent): void => {
+                // Offer every supported choice with its readable label.
+                dropdown.addOptions(options);
 
-                // Persist a changed choice.
-                toggle.onChange((value: boolean): void => {
-                    // Save the area default.
-                    this.saveTreeDefaults({ hideInactiveAreas: value });
+                // Select the stored choice and persist a change.
+                dropdown.setValue(current);
+                dropdown.onChange((value: string): void => {
+                    // Persist only a choice defined by the option map.
+                    if (Object.prototype.hasOwnProperty.call(options, value)) {
+                        // Save the selected choice.
+                        save(value as T);
+                    }
                 });
             });
+    }
+
+    /** Render one boolean toggle for a tree default. */
+    private toggleSetting(container: HTMLElement, name: string, description: string | null, value: boolean, change: (value: boolean) => void): void {
+        // Create the toggle setting.
+        const setting: Setting = new Setting(container).setName(name);
+
+        // Add a description only when the caller supplies one.
+        if (description !== null) {
+            // Apply the supplied description.
+            setting.setDesc(description);
+        }
+
+        // Show the stored value and persist a change.
+        setting.addToggle((toggle: ToggleComponent): void => {
+            // Show the stored value.
+            toggle.setValue(value);
+
+            // Persist a changed choice.
+            toggle.onChange(change);
+        });
     }
 
     /** Render one state's default selection toggle. */
@@ -155,28 +180,26 @@ export class CommitmentSettingTab extends PluginSettingTab {
             ? "projectStates"
             : "programStates";
 
-        // Create the state toggle.
-        new Setting(container)
-            .setName(`${titleCase(state)} ${kind}s`)
-            .addToggle((toggle: ToggleComponent): void => {
-                // Show the stored selection.
-                toggle.setValue(this.host.settings.presentation.treeDefaults[key].includes(state));
+        // Render the state toggle.
+        this.toggleSetting(
+            container,
+            `${titleCase(state)} ${kind}s`,
+            null,
+            this.host.settings.presentation.treeDefaults[key].includes(state),
+            (value: boolean): void => {
+                // Read the latest selection before changing it.
+                const current: readonly ProjectState[] =
+                    this.host.settings.presentation.treeDefaults[key];
 
-                // Persist a changed selection.
-                toggle.onChange((value: boolean): void => {
-                    // Read the latest selection before changing it.
-                    const current: readonly ProjectState[] =
-                        this.host.settings.presentation.treeDefaults[key];
+                // Add or remove the edited state.
+                const next: readonly ProjectState[] = value
+                    ? [...current, state]
+                    : current.filter((candidate: ProjectState): boolean => candidate !== state);
 
-                    // Add or remove the edited state.
-                    const next: readonly ProjectState[] = value
-                        ? [...current, state]
-                        : current.filter((candidate: ProjectState): boolean => candidate !== state);
-
-                    // Save the updated selection.
-                    this.saveTreeDefaults({ [key]: next });
-                });
-            });
+                // Save the updated selection.
+                this.saveTreeDefaults({ [key]: next });
+            },
+        );
     }
 
     /** Render the six default state toggles for one scope. */
@@ -224,56 +247,6 @@ export class CommitmentSettingTab extends PluginSettingTab {
             description: `Vault folder for new ${field.kind} files. Leave empty to use the vault root.`,
             placeholder: "Commitments",
         };
-    }
-
-    /** Render the display-mode choice. */
-    private presentationSetting(container: HTMLElement): void {
-        // Create the presentation setting.
-        new Setting(container)
-            .setName("Graph view")
-            .setDesc("Show the graph as JSON text or as a foldable tree.")
-            .addDropdown((dropdown: DropdownComponent): void => {
-                // Offer every supported presentation with its readable label.
-                for (const mode of Object.keys(CONFIG.PRESENTATION_MODES) as PresentationMode[]) {
-                    // Add the mode with its readable label.
-                    dropdown.addOption(mode, CONFIG.PRESENTATION_MODES[mode]);
-                }
-
-                // Select the stored presentation and persist a change.
-                dropdown.setValue(this.host.settings.presentation.mode);
-                dropdown.onChange((value: string): void => {
-                    // Persist only a mode defined by the shared map.
-                    if (Object.prototype.hasOwnProperty.call(CONFIG.PRESENTATION_MODES, value)) {
-                        // Save the selected mode with the order and creation settings intact.
-                        this.savePresentation({ mode: value as PresentationMode });
-                    }
-                });
-            });
-    }
-
-    /** Render the graph area order choice. */
-    private sortSetting(container: HTMLElement): void {
-        // Create the sort setting.
-        new Setting(container)
-            .setName("Graph order")
-            .setDesc("Order areas in every graph view.")
-            .addDropdown((dropdown: DropdownComponent): void => {
-                // Offer every supported order with its readable label.
-                for (const sort of Object.keys(CONFIG.GRAPH_SORTS) as GraphSort[]) {
-                    // Add the order with its readable label.
-                    dropdown.addOption(sort, CONFIG.GRAPH_SORTS[sort]);
-                }
-
-                // Select the stored order and persist a change.
-                dropdown.setValue(this.host.settings.presentation.sort);
-                dropdown.onChange((value: string): void => {
-                    // Persist only an order defined by the shared map.
-                    if (Object.prototype.hasOwnProperty.call(CONFIG.GRAPH_SORTS, value)) {
-                        // Save the selected order with the mode and creation settings intact.
-                        this.savePresentation({ sort: value as GraphSort });
-                    }
-                });
-            });
     }
 
     /** Render one commitment level's accent color choice. */
@@ -383,8 +356,32 @@ export class CommitmentSettingTab extends PluginSettingTab {
 
         // Render the plugin-wide choices.
         this.heading(container, "General");
-        this.presentationSetting(container);
-        this.sortSetting(container);
+
+        // Render the presentation choice.
+        this.choiceSetting(
+            container,
+            "Graph view",
+            "Show the graph as JSON text or as a foldable tree.",
+            CONFIG.PRESENTATION_MODES,
+            this.host.settings.presentation.mode,
+            (mode: PresentationMode): void => {
+                // Save the selected mode with the order and creation settings intact.
+                this.savePresentation({ mode });
+            },
+        );
+
+        // Render the order choice.
+        this.choiceSetting(
+            container,
+            "Graph order",
+            "Order areas in every graph view.",
+            CONFIG.GRAPH_SORTS,
+            this.host.settings.presentation.sort,
+            (sort: GraphSort): void => {
+                // Save the selected order with the mode and creation settings intact.
+                this.savePresentation({ sort });
+            },
+        );
         this.styleSetting(container);
 
         // Render the accent color heading.
@@ -404,7 +401,16 @@ export class CommitmentSettingTab extends PluginSettingTab {
             // Add the area default before its creation fields.
             if (kind === "area") {
                 // Render the default area visibility choice.
-                this.areaDefaultsSetting(container);
+                this.toggleSetting(
+                    container,
+                    "Hide inactive areas by default",
+                    "Start each tree with areas marked inactive hidden.",
+                    this.host.settings.presentation.treeDefaults.hideInactiveAreas,
+                    (value: boolean): void => {
+                        // Save the area default.
+                        this.saveTreeDefaults({ hideInactiveAreas: value });
+                    },
+                );
             } else {
                 // Render the default state toggles for this kind.
                 this.stateDefaultsSetting(container, kind);
