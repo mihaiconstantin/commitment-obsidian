@@ -23,41 +23,36 @@ export interface IdStyleSpec {
 }
 
 
-/** Every supported identifier style with its label and text transform. */
+/** Register each supported style; adding one costs one entry here and one union member. */
+const ID_STYLES: Readonly<Record<IdStyle, IdStyleSpec>> = {
+    titleCase: { label: "Title Case", format: titleCase },
+    none: { label: "None", format: (id: string): string => id },
+};
+
+
+/** Catalog of the supported identifier styles. */
 export class IdStyleCatalog {
-    /** Supported styles, keyed by the persisted style name. */
-    private readonly styles: Readonly<Record<IdStyle, IdStyleSpec>>;
-
-    /** Register each supported style; adding one costs one entry here and one union member. */
-    public constructor() {
-        // Register the title-case style with the shared title-case transform.
-        this.styles = {
-            titleCase: { label: "Title Case", format: titleCase },
-            none: { label: "None", format: (id: string): string => id },
-        };
-    }
-
     /** Return whether a value is a supported identifier style. */
     public isStyle(value: unknown): value is IdStyle {
         // Require exact text that names an own style entry.
-        return typeof value === "string" && Object.prototype.hasOwnProperty.call(this.styles, value);
+        return typeof value === "string" && Object.prototype.hasOwnProperty.call(ID_STYLES, value);
     }
 
     /** Return the identifier text for one supported style. */
     public format(style: IdStyle, id: string): string {
         // Apply the style's text transform.
-        return this.styles[style].format(id);
+        return ID_STYLES[style].format(id);
     }
 
     /** Return the settings label for one supported style. */
     public label(style: IdStyle): string {
         // Return the style's readable label.
-        return this.styles[style].label;
+        return ID_STYLES[style].label;
     }
 
     /** Return every supported style in display order. */
     public keys(): readonly IdStyle[] {
         // Preserve the registration order used by the settings dropdown.
-        return Object.keys(this.styles) as IdStyle[];
+        return Object.keys(ID_STYLES) as IdStyle[];
     }
 }
