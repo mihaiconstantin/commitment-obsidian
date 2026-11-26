@@ -3,7 +3,7 @@
   "name": "Commitment",
   "version": "1.0.0",
   "minAppVersion": "1.5.7",
-  "description": "View, update, and diagnose the derived commitment graph.",
+  "description": "View, update, and diagnose a derived commitment graph.",
   "author": "Mihai Constantin",
   "authorUrl": "https://commitment.mihaiconstantin.com",
   "isDesktopOnly": false
