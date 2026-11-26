@@ -250,7 +250,7 @@ describe("commitment graph commands", () => {
         // Render the registered settings tab.
         plugin.settingTabs[0]?.display();
 
-        // Read the rendered settings and their selected values.
+        // Read the rendered settings, their selected values, and their options.
         const container: HTMLElement = plugin.settingTabs[0]?.containerEl as HTMLElement;
         expect(container.textContent).toContain("Graph view");
         expect(container.textContent).toContain("Graph order");
@@ -259,6 +259,8 @@ describe("commitment graph commands", () => {
             controls.find((setting) => setting.nameEl.textContent === name);
         expect(byName("Graph view")?.value).toBe("tree");
         expect(byName("Graph order")?.value).toBe("count");
+        expect(byName("Graph view")?.options).toEqual(["json", "tree"]);
+        expect(byName("Graph order")?.options).toEqual(["name", "count"]);
 
         // Change the mode and require the stored order to survive.
         byName("Graph view")?.change?.("json");

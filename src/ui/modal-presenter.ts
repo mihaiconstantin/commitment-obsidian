@@ -14,6 +14,7 @@ import type {
     PresentationSettings,
 } from "../settings/settings";
 import { GraphModal } from "./graph-modal";
+import type { TreeModel } from "./tree-model";
 
 
 /** Present the graph in the standard modal as scrollable text or a tree. */
@@ -35,7 +36,7 @@ export class ModalGraphPresenter {
     }
 
     /** Display one graph in a modal. */
-    public show(graph: CommitmentGraph, presentation: PresentationSettings, actions: ContainerFileActions | null): void {
+    public show(graph: CommitmentGraph, presentation: PresentationSettings, actions: ContainerFileActions | null, model: TreeModel | null): void {
         // Close the previous modal so only one presentation is open.
         this.modal?.close();
         this.modal = null;
@@ -47,6 +48,7 @@ export class ModalGraphPresenter {
             presentation,
             this.appearance(),
             actions,
+            model,
             (): void => {
                 // Forget the released modal when it is still the current one.
                 if (this.modal === modal) {

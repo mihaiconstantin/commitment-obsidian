@@ -7,10 +7,13 @@ vi.mock("obsidian", async () => await import("../stubs/obsidian"));
 import { App, Modal, Notice } from "obsidian";
 import { GraphBuilder, type GraphBuild } from "../../src/graph/builder";
 import { CONFIG } from "../../src/constants";
+import type { ContainerFileActions } from "../../src/containers/container-file-actions";
 import { ContainerDocumentComposer } from "../../src/containers/container-document";
 import { VaultContainerFileActions } from "../../src/containers/vault-file-actions";
 import { VaultFileOpener } from "../../src/containers/vault-file-opener";
 import { ModalGraphPresenter } from "../../src/ui/modal-presenter";
+import { TreeModel } from "../../src/ui/tree-model";
+import type { CommitmentGraph } from "../../src/graph/commitment-graph";
 import type { CanonicalInput } from "../../src/graph/types";
 import type { PresentationSettings } from "../../src/settings/settings";
 import { FakeVault } from "../support/fake-vault";
@@ -31,6 +34,18 @@ const TREE_PRESENTATION: PresentationSettings = {
 /** Build one graph read model from canonical inputs. */
 function buildGraph(inputs: readonly CanonicalInput[]): GraphBuild {
     return new GraphBuilder(inputs).build();
+}
+
+
+/** Show one graph through the production tree-model seam. */
+function showGraph(presenter: ModalGraphPresenter, graph: CommitmentGraph, presentation: PresentationSettings, actions: ContainerFileActions | null): void {
+    // Create the tree model only for the tree presentation.
+    const model: TreeModel | null = presentation.mode === "tree"
+        ? new TreeModel(graph.getAreas(), presentation.sort, presentation.treeDefaults)
+        : null;
+
+    // Display the graph with its optional tree model.
+    presenter.show(graph, presentation, actions, model);
 }
 
 
@@ -76,7 +91,7 @@ describe("text graph presenter", () => {
         // Derive the graph from the canonical inputs.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, JSON_PRESENTATION, null);
+        showGraph(presenter, result.graph, JSON_PRESENTATION, null);
 
         const block: Element | null = document.querySelector("pre.commitment-graph__json");
         expect(block?.textContent).toBe(
@@ -101,13 +116,13 @@ describe("text graph presenter", () => {
         ]);
 
         // Require the JSON presentation to omit the finding.
-        presenter.show(result.graph, JSON_PRESENTATION, null);
+        showGraph(presenter, result.graph, JSON_PRESENTATION, null);
         expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
         expect(document.body.textContent).not.toContain("Warnings");
         expect(document.body.textContent).not.toContain("meetings/missing.md");
 
         // Require the tree presentation to omit the finding too.
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
         expect(document.querySelector(".commitment-graph__warnings")).toBeNull();
         expect(document.body.textContent).not.toContain("Warnings");
         expect(document.body.textContent).not.toContain("meetings/missing.md");
@@ -126,21 +141,21 @@ describe("text graph presenter", () => {
         ]);
 
         // Require name order in the JSON presentation.
-        presenter.show(result.graph, { ...JSON_PRESENTATION, sort: "name" }, null);
+        showGraph(presenter, result.graph, { ...JSON_PRESENTATION, sort: "name" }, null);
         const nameJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
         expect(nameJson.indexOf('"home"')).toBeLessThan(nameJson.indexOf('"work"'));
 
         // Require count order in the JSON presentation.
-        presenter.show(result.graph, { ...JSON_PRESENTATION, sort: "count" }, null);
+        showGraph(presenter, result.graph, { ...JSON_PRESENTATION, sort: "count" }, null);
         const countJson: string = document.querySelector("pre.commitment-graph__json")?.textContent ?? "";
         expect(countJson.indexOf('"work"')).toBeLessThan(countJson.indexOf('"home"'));
 
         // Require name order in the tree presentation.
-        presenter.show(result.graph, { ...TREE_PRESENTATION, sort: "name" }, null);
+        showGraph(presenter, result.graph, { ...TREE_PRESENTATION, sort: "name" }, null);
         expect(areaNames()).toEqual(["home", "work"]);
 
         // Require count order in the tree presentation.
-        presenter.show(result.graph, { ...TREE_PRESENTATION, sort: "count" }, null);
+        showGraph(presenter, result.graph, { ...TREE_PRESENTATION, sort: "count" }, null);
         expect(areaNames()).toEqual(["work", "home"]);
     });
 
@@ -160,7 +175,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, JSON_PRESENTATION, null);
+        showGraph(presenter, result.graph, JSON_PRESENTATION, null);
 
         expect(Modal.instances).toHaveLength(1);
         expect(Modal.instances[0]?.titleEl.textContent).toBe("Commitment Graph");
@@ -180,7 +195,7 @@ describe("text graph presenter", () => {
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Open the tree presentation.
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
 
         // Require the modal to leave focus alone on open.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -216,7 +231,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
 
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.modalEl.classList.contains("commitment-modal")).toBe(true);
@@ -241,7 +256,7 @@ describe("text graph presenter", () => {
         const presenter: ModalGraphPresenter = new ModalGraphPresenter(app, () => ({ area: "#112233", program: "#445566" }));
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
 
         // Require every supplied color on the mounted tree host.
         const host: HTMLElement = document.querySelector(".commitment-graph__tree-host") as HTMLElement;
@@ -264,7 +279,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
 
         expect(document.querySelector("img")).toBeNull();
         expect(document.querySelector("b")).toBeNull();
@@ -280,7 +295,7 @@ describe("text graph presenter", () => {
         // Derive the empty graph.
         const result: GraphBuild = buildGraph([]);
 
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
 
         expect(document.querySelector(".cg-empty")?.textContent).toContain("No areas");
         expect(document.querySelector(".cg-node")).toBeNull();
@@ -324,7 +339,7 @@ describe("text graph presenter", () => {
         // Derive a graph with one area.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
 
         // Require the keymap registration.
         const modal: Modal = Modal.instances[0] as Modal;
@@ -347,7 +362,7 @@ describe("text graph presenter", () => {
         const app: App = new App();
         const presenter: ModalGraphPresenter = new ModalGraphPresenter(app);
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
         const modal: Modal = Modal.instances[0] as Modal;
         expect(modal.contentEl.querySelector(".cg-list")).not.toBeNull();
 
@@ -366,9 +381,9 @@ describe("text graph presenter", () => {
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
         // Present the graph twice in a row.
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
         const first: Modal = Modal.instances[0] as Modal;
-        presenter.show(result.graph, TREE_PRESENTATION, null);
+        showGraph(presenter, result.graph, TREE_PRESENTATION, null);
         const second: Modal = Modal.instances[1] as Modal;
 
         // Require the older modal to close and the newer one to stay open.
@@ -406,7 +421,7 @@ describe("text graph presenter", () => {
             ]),
         ]);
 
-        presenter.show(
+        showGraph(presenter,
             result.graph,
             TREE_PRESENTATION,
             new VaultContainerFileActions(
@@ -437,7 +452,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(
+        showGraph(presenter,
             result.graph,
             TREE_PRESENTATION,
             new VaultContainerFileActions(
@@ -474,7 +489,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project under an implicit area.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(
+        showGraph(presenter,
             result.graph,
             TREE_PRESENTATION,
             new VaultContainerFileActions(
@@ -507,7 +522,7 @@ describe("text graph presenter", () => {
         // Derive the graph with one explicit project.
         const result: GraphBuild = buildGraph([project("projects/alpha.md", "alpha")]);
 
-        presenter.show(result.graph, JSON_PRESENTATION, null);
+        showGraph(presenter, result.graph, JSON_PRESENTATION, null);
 
         expect(document.querySelector(".cg-file")).toBeNull();
     });

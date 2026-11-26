@@ -20,6 +20,7 @@ import type {
 } from "../settings/settings";
 import { GraphTree } from "./graph-tree";
 import { CommitmentModal } from "./commitment-modal";
+import type { TreeModel } from "./tree-model";
 
 
 /** Modal showing one derived graph. */
@@ -36,6 +37,9 @@ export class GraphModal extends CommitmentModal {
     /** File actions composed for this graph, or none for JSON presentation. */
     private readonly actions: ContainerFileActions | null;
 
+    /** Prepared tree model, or none for JSON presentation. */
+    private readonly model: TreeModel | null;
+
     /** Called after the modal released its content, or null when unused. */
     private readonly released: (() => void) | null;
 
@@ -44,6 +48,15 @@ export class GraphModal extends CommitmentModal {
 
     /** Mount the tree and bind the modal keymap shortcuts to it. */
     private renderTree(content: HTMLElement): void {
+        // Require the tree model composed for this graph.
+        const model: TreeModel | null = this.model;
+
+        // Reject an inconsistent tree presentation without its model.
+        if (model === null) {
+            // Report the missing composition.
+            throw new Error("Tree presentation requires a tree model.");
+        }
+
         // Create the tree host that fills the modal body.
         const host: HTMLElement = content.createDiv({
             cls: "commitment-graph__tree-host commitment-modal__body",
@@ -70,14 +83,7 @@ export class GraphModal extends CommitmentModal {
         };
 
         // Mount the interactive tree in the configured area order.
-        const tree: GraphTree = new GraphTree(
-            host,
-            this.graph.getAreas(),
-            this.presentation.sort,
-            actions,
-            this.appearance,
-            this.presentation.treeDefaults,
-        );
+        const tree: GraphTree = new GraphTree(host, model, actions, this.appearance);
 
         // Bind "/" to the search field through the modal keymap.
         this.scope.register(null, "/", (): false | true => {
@@ -96,13 +102,14 @@ export class GraphModal extends CommitmentModal {
     }
 
     /** Construct the modal without touching the DOM. */
-    public constructor(app: App, graph: CommitmentGraph, presentation: PresentationSettings, appearance: AppearanceSettings, actions: ContainerFileActions | null, released: (() => void) | null = null) {
+    public constructor(app: App, graph: CommitmentGraph, presentation: PresentationSettings, appearance: AppearanceSettings, actions: ContainerFileActions | null, model: TreeModel | null, released: (() => void) | null = null) {
         // Initialize the Obsidian modal and retain its inputs.
         super(app);
         this.graph = graph;
         this.presentation = presentation;
         this.appearance = appearance;
         this.actions = actions;
+        this.model = model;
         this.released = released;
     }
 

@@ -444,6 +444,8 @@ export class Modal {
 export interface DropdownComponent {
     /** Add one selectable option. */
     addOption(value: string, label: string): DropdownComponent;
+    /** Add several selectable options in object insertion order. */
+    addOptions(options: Record<string, string>): DropdownComponent;
     /** Select one option without firing the change handler. */
     setValue(value: string): DropdownComponent;
     /** Register the change handler. */
@@ -572,6 +574,7 @@ export class Setting {
     descEl: HTMLElement;
     controlEl: HTMLElement;
     value = "";
+    options: string[] = [];
     change: ((value: string) => void) | null = null;
     color: ColorComponent | null = null;
     toggle: ToggleComponent | null = null;
@@ -607,6 +610,11 @@ export class Setting {
     addDropdown(build: (dropdown: DropdownComponent) => void): this {
         const control: DropdownComponent = {
             addOption: (): DropdownComponent => control,
+            addOptions: (options: Record<string, string>): DropdownComponent => {
+                // Record the option values in insertion order for assertions.
+                this.options.push(...Object.keys(options));
+                return control;
+            },
             setValue: (value: string): DropdownComponent => {
                 this.value = value;
                 return control;
