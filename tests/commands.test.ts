@@ -41,7 +41,7 @@ async function createPlugin(files: Record<string, string> = { "projects/alpha.md
 
     // Compose the plugin over the stub app.
     const plugin: CommitmentPlugin = new CommitmentPlugin(app, {
-        id: "commitment-graph",
+        id: "commitment",
         name: "Commitment",
         version: "0.1.0",
         minAppVersion: "1.5.7",
