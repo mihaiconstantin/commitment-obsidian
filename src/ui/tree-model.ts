@@ -6,10 +6,11 @@
  * rendering class stays focused on the DOM.
  */
 
-import { PROJECT_STATES, type ProjectState } from "../graph/project-state";
+import type { ProjectState } from "../graph/project-state";
 import type { GraphArea, GraphProgram } from "../graph/types";
 import { countAreaProjects, orderAreas } from "../helpers/area-order";
 import type { GraphSort, TreeDefaultsSettings } from "../settings/settings";
+import { StateSelection } from "./state-selection";
 
 
 /** One area reduced to the part that survives the active filters. */
@@ -63,19 +64,13 @@ export class TreeModel {
     private query: string = "";
 
     /** Project states currently selected by the tree controls. */
-    private projectStates: ReadonlySet<ProjectState>;
+    private readonly projectStates: StateSelection;
 
     /** Program states currently selected by the tree controls. */
-    private programStates: ReadonlySet<ProjectState>;
+    private readonly programStates: StateSelection;
 
     /** Whether explicitly inactive areas are hidden. */
     private hideInactiveAreas: boolean;
-
-    /** Project states applied when the tree opened. */
-    private readonly defaultProjectStates: ReadonlySet<ProjectState>;
-
-    /** Program states applied when the tree opened. */
-    private readonly defaultProgramStates: ReadonlySet<ProjectState>;
 
     /** Area visibility applied when the tree opened. */
     private readonly defaultHideInactiveAreas: boolean;
@@ -95,7 +90,7 @@ export class TreeModel {
     /** Report whether a program passes its own state filter. */
     private programInScope(program: GraphProgram): boolean {
         // Keep programs with unknown or invalid state in scope.
-        if (!this.isProgramStateFiltering() || program.state === null) {
+        if (!this.programStates.isFiltering() || program.state === null) {
             // Keep the program.
             return true;
         }
@@ -104,38 +99,10 @@ export class TreeModel {
         return this.programStates.has(program.state);
     }
 
-    /** Report whether a project-state constraint is applied. */
-    private isProjectStateFiltering(): boolean {
-        // Report a constraint when any recognized project state is unselected.
-        return PROJECT_STATES.some(
-            (state: ProjectState): boolean => !this.projectStates.has(state),
-        );
-    }
-
-    /** Report whether a program-state constraint is applied. */
-    private isProgramStateFiltering(): boolean {
-        // Report a constraint when any recognized program state is unselected.
-        return PROJECT_STATES.some(
-            (state: ProjectState): boolean => !this.programStates.has(state),
-        );
-    }
-
-    /** Report whether two state selections contain the same states. */
-    private statesEqual(left: ReadonlySet<ProjectState>, right: ReadonlySet<ProjectState>): boolean {
-        // Require equal sizes before checking membership.
-        if (left.size !== right.size) {
-            // Report a different selection.
-            return false;
-        }
-
-        // Require every left state to exist on the right.
-        return Array.from(left).every((state: ProjectState): boolean => right.has(state));
-    }
-
     /** Return whether one project passes the active state constraint. */
     private matchesState(area: GraphArea, identifier: string): boolean {
         // Accept every project when no project-state constraint is active.
-        if (!this.isProjectStateFiltering()) {
+        if (!this.projectStates.isFiltering()) {
             // Keep the project.
             return true;
         }
@@ -168,11 +135,9 @@ export class TreeModel {
         this.sort = sort;
 
         // Copy the configured defaults so later control changes stay local.
-        this.defaultProjectStates = new Set<ProjectState>(defaults.projectStates);
-        this.defaultProgramStates = new Set<ProjectState>(defaults.programStates);
+        this.projectStates = new StateSelection(defaults.projectStates);
+        this.programStates = new StateSelection(defaults.programStates);
         this.defaultHideInactiveAreas = defaults.hideInactiveAreas;
-        this.projectStates = new Set<ProjectState>(defaults.projectStates);
-        this.programStates = new Set<ProjectState>(defaults.programStates);
         this.hideInactiveAreas = defaults.hideInactiveAreas;
 
         // Read the display totals once for the stats line and the meters.
@@ -204,26 +169,26 @@ export class TreeModel {
 
     /** Replace the selected project states. */
     public setStates(states: ReadonlySet<ProjectState>): void {
-        // Copy the caller's set so later mutations do not change the view.
-        this.projectStates = new Set(states);
+        // Replace the project selection.
+        this.projectStates.set(states);
     }
 
     /** Return the selected project states. */
     public getStates(): ReadonlySet<ProjectState> {
-        // Report the current selection without exposing a mutable set.
-        return this.projectStates;
+        // Report the current project selection.
+        return this.projectStates.get();
     }
 
     /** Replace the selected program states. */
     public setProgramStates(states: ReadonlySet<ProjectState>): void {
-        // Copy the caller's set so later mutations do not change the view.
-        this.programStates = new Set(states);
+        // Replace the program selection.
+        this.programStates.set(states);
     }
 
     /** Return the selected program states. */
     public getProgramStates(): ReadonlySet<ProjectState> {
-        // Report the current selection without exposing a mutable set.
-        return this.programStates;
+        // Report the current program selection.
+        return this.programStates.get();
     }
 
     /** Set whether explicitly inactive areas are hidden. */
@@ -244,8 +209,8 @@ export class TreeModel {
         return (
             this.query === ""
             && this.hideInactiveAreas === this.defaultHideInactiveAreas
-            && this.statesEqual(this.projectStates, this.defaultProjectStates)
-            && this.statesEqual(this.programStates, this.defaultProgramStates)
+            && this.projectStates.isAtDefault()
+            && this.programStates.isAtDefault()
         );
     }
 
@@ -254,8 +219,8 @@ export class TreeModel {
         // Combine the text query, both state subsets, and the area scope.
         return (
             this.query !== ""
-            || this.isProjectStateFiltering()
-            || this.isProgramStateFiltering()
+            || this.projectStates.isFiltering()
+            || this.programStates.isFiltering()
             || this.hideInactiveAreas
         );
     }
@@ -271,8 +236,8 @@ export class TreeModel {
         // Name the query when it is the only active filter.
         if (
             this.query !== ""
-            && !this.isProjectStateFiltering()
-            && !this.isProgramStateFiltering()
+            && !this.projectStates.isFiltering()
+            && !this.programStates.isFiltering()
             && !this.hideInactiveAreas
         ) {
             // Report the unmatched query.
@@ -315,7 +280,7 @@ export class TreeModel {
         }
 
         // Read whether a project-state constraint is applied.
-        const stateFiltering: boolean = this.isProjectStateFiltering();
+        const stateFiltering: boolean = this.projectStates.isFiltering();
 
         // Reduce direct projects by state when needed.
         const projects: readonly string[] = stateFiltering
