@@ -1,5 +1,5 @@
 {
-  "name": "commitment-graph",
+  "name": "commitment",
   "version": "1.0.0",
   "description": "View, update, and diagnose a derived commitment graph.",
   "main": "dist/main.js",
