@@ -232,6 +232,12 @@ export class TreeModel {
         this.hideInactiveAreas = hide;
     }
 
+    /** Return whether explicitly inactive areas are hidden. */
+    public getHideInactiveAreas(): boolean {
+        // Report the current control value.
+        return this.hideInactiveAreas;
+    }
+
     /** Report whether the active filters match the opening defaults. */
     public isAtDefaults(): boolean {
         // Compare the query, both state selections, and the area scope.

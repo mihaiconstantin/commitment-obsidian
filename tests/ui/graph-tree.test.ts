@@ -8,6 +8,7 @@ import type { ContainerFileActions } from "../../src/containers/container-file-a
 import { PROJECT_STATES, type ProjectState } from "../../src/graph/project-state";
 import type { GraphArea } from "../../src/graph/types";
 import type { AppearanceSettings, GraphSort, TreeDefaultsSettings } from "../../src/settings/settings";
+import { TreeModel } from "../../src/ui/tree-model";
 
 
 const AREAS: readonly GraphArea[] = [
@@ -122,8 +123,11 @@ function mount(areas: readonly GraphArea[] = AREAS, actions: ContainerFileAction
     // Attach it so focus and native folding behave like the modal.
     document.body.append(host);
 
+    // Build the model before mounting the view.
+    const model: TreeModel = new TreeModel(areas, sort, defaults);
+
     // Mount the tree and return its boundary.
-    return { host, tree: new GraphTree(host, areas, sort, actions, appearance, defaults) };
+    return { host, tree: new GraphTree(host, model, actions, appearance) };
 }
 
 

@@ -14,9 +14,8 @@ import type { ContainerFileAction, ContainerFileActions } from "../containers/co
 import { PROJECT_STATES, type ProjectState } from "../graph/project-state";
 import type { ContainerIdentity, GraphArea, GraphProgram } from "../graph/types";
 import { countLabel, titleCase } from "../helpers/strings";
-import type { AppearanceSettings, GraphSort, TreeDefaultsSettings } from "../settings/settings";
-import { TreeModel } from "./tree-model";
-import type { AreaView } from "./tree-model";
+import type { AppearanceSettings } from "../settings/settings";
+import type { AreaView, TreeModel } from "./tree-model";
 
 
 /** Project row elements kept for in-place filtering. */
@@ -870,10 +869,10 @@ export class GraphTree {
     }
 
     /** Construct and mount one tree inside the supplied container. */
-    public constructor(container: HTMLElement, areas: readonly GraphArea[], sort: GraphSort, actions: ContainerFileActions | null, appearance: AppearanceSettings, defaults: TreeDefaultsSettings) {
-        // Store the file action seam and the ordered tree model.
+    public constructor(container: HTMLElement, model: TreeModel, actions: ContainerFileActions | null, appearance: AppearanceSettings) {
+        // Store the file action seam and the prepared tree model.
         this.actions = actions;
-        this.model = new TreeModel(areas, sort, defaults);
+        this.model = model;
 
         // Apply the stored type accents before building the rows.
         this.applyAppearance(container, appearance);
@@ -897,11 +896,11 @@ export class GraphTree {
         this.empty.className = "cg-empty";
         this.empty.hidden = true;
 
-        // Create the area relevance checkbox with its configured default.
+        // Create the area relevance checkbox with the model's current value.
         this.inactiveBox = document.createElement("input");
         this.inactiveBox.type = "checkbox";
         this.inactiveBox.dataset.cgScope = "area";
-        this.inactiveBox.checked = defaults.hideInactiveAreas;
+        this.inactiveBox.checked = this.model.getHideInactiveAreas();
 
         // Assemble the chrome and build every row once.
         this.buildChrome(container);

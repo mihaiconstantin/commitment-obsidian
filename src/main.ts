@@ -25,6 +25,7 @@ import {
 import { CommitmentSettingTab } from "./settings/settings-tab";
 import { ModalDoctorPresenter } from "./ui/modal-doctor-presenter";
 import { ModalGraphPresenter } from "./ui/modal-presenter";
+import { TreeModel } from "./ui/tree-model";
 
 
 /** Commitment graph plugin. */
@@ -86,8 +87,17 @@ export default class CommitmentPlugin extends Plugin {
                 )
                 : null;
 
+            // Create the tree model only for the interactive tree.
+            const model: TreeModel | null = this.settings.presentation.mode === "tree"
+                ? new TreeModel(
+                    build.graph.getAreas(),
+                    this.settings.presentation.sort,
+                    this.settings.presentation.treeDefaults,
+                )
+                : null;
+
             // Display the graph without writing.
-            this.graphPresenter.show(build.graph, this.settings.presentation, actions);
+            this.graphPresenter.show(build.graph, this.settings.presentation, actions, model);
         });
     }
 
