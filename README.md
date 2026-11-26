@@ -1,6 +1,13 @@
-# `Commitment`
+# `commitment`
 
-`Commitment` is an [Obsidian] plugin that builds a commitment graph from the
+<!-- badges: start -->
+<p align="center">
+    <a href="https://www.repostatus.org/#active"><img src="https://www.repostatus.org/badges/latest/active.svg" alt="Repository status"/></a>
+    <a href="https://github.com/mihaiconstantin/commitment-obsidian/releases"><img src="https://img.shields.io/github/v/release/mihaiconstantin/commitment-obsidian?display_name=tag&sort=semver" alt="GitHub version"/></a>
+</p>
+<!-- badges: end -->
+
+`commitment` is an [Obsidian] plugin that builds a commitment graph from the
 `YAML` frontmatter of saved Markdown files in a vault. It is my minimal system
 for organizing work using text files.
 
