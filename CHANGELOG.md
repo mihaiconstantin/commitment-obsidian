@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Add badges to `README.md`.
+
+### Changed
+
+- Update packages from `commitment-graph` to `commitment`.
+
+### Fixed
+
+- Fix version in `package-lock.json` to match `package.json`.
+
 ## [1.0.0] - 2026-11-26
 
 ### Added
